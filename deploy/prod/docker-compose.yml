@@ -1,0 +1,107 @@
+services:
+  backend:
+    build:
+      context: ../..
+      dockerfile: deploy/common/Dockerfile
+    container_name: official-backend-app
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    environment:
+      TZ: ${APP_TIMEZONE:-Asia/Shanghai}
+      STRICT_ENV: ${STRICT_ENV:-true}
+      GUNICORN_RELOAD: "false"
+    working_dir: /app
+    command: gunicorn --config gunicorn.conf.py wsgi:app
+    volumes:
+      - ../../file-data:/srv/file-data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/healthz', timeout=5).read()"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  worker:
+    build:
+      context: ../..
+      dockerfile: deploy/common/Dockerfile
+    container_name: official-backend-worker
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    environment:
+      TZ: ${APP_TIMEZONE:-Asia/Shanghai}
+      STRICT_ENV: ${STRICT_ENV:-true}
+    working_dir: /app
+    command: python worker.py
+    volumes:
+      - ../../file-data:/srv/file-data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16
+    container_name: official-backend-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ustbhome
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      TZ: ${APP_TIMEZONE:-Asia/Shanghai}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ustbhome"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7
+    container_name: official-backend-redis
+    restart: unless-stopped
+    environment:
+      TZ: ${APP_TIMEZONE:-Asia/Shanghai}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  caddy:
+    image: caddy:2
+    container_name: official-backend-caddy
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    environment:
+      TZ: ${APP_TIMEZONE:-Asia/Shanghai}
+      FRONTEND_UPSTREAM: ${FRONTEND_UPSTREAM:-http://frontend:80}
+      BACKEND_UPSTREAM: ${BACKEND_UPSTREAM:-http://backend:5000}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ${MCA_STORAGE_ROOT}:${MCA_STORAGE_MOUNT}:ro
+      - ../../file-data:/srv/file-data:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  redis_data:
+  caddy_data:
+  caddy_config:

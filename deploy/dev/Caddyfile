@@ -1,0 +1,42 @@
+(common_dev_headers) {
+	encode gzip zstd
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options SAMEORIGIN
+		Referrer-Policy strict-origin-when-cross-origin
+	}
+}
+
+{$API_SITE_HOST} {
+	import common_dev_headers
+	reverse_proxy {$BACKEND_UPSTREAM}
+}
+
+{$APP_SITE_HOST} {
+	import common_dev_headers
+
+	@download_paths {
+		path /downloads/*
+	}
+	@backend_paths {
+		path /api*
+		path /auth*
+		path /skin-origin-proxy*
+		path /diagnostics*
+	}
+
+	route @download_paths {
+		forward_auth {$BACKEND_UPSTREAM} {
+			uri /api/file-downloads/authorize
+		}
+		uri strip_prefix /downloads
+		root * /srv/file-data
+		header Content-Disposition "attachment"
+		file_server {
+			precompressed gzip zstd
+		}
+	}
+
+	reverse_proxy @backend_paths {$BACKEND_UPSTREAM}
+	reverse_proxy {$DEV_FRONTEND_UPSTREAM}
+}
