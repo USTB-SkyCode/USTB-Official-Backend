@@ -1,4 +1,4 @@
-# Official-backend
+﻿# Official-backend
 
 Flask 后端 + Caddy 边缘 + Docker Compose 一体化部署。
 
@@ -85,34 +85,24 @@ OAuth Provider 按需填写（至少启用一种登录方式）：
 
 完整变量说明见 [deploy/prod/env.example](deploy/prod/env.example)。
 
-### 2. 部署前端容器
+### 2. Dokploy 部署前端 (Application)
 
-前端作为独立 Dokploy Application 部署，详见 [world/README.md](../world/README.md) 中的「生产构建与容器化」部分。
+前端作为独立 Dokploy Application 部署：
+1. **Name**：填入 `official-front`（必须一致，后端以此名在内网访问前端）
+2. **Build Type**：选择 `Dockerfile`
+3. **Dockerfile Path**：`Dockerfile` (前端根目录下已提供好自带 Caddy 的多阶段构建文件)
+4. 保存即可。无需分配域名。
 
-前端容器启动后，需确保它在后端 compose 的同一 Docker 网络中可达，其地址即为 `.env` 中的 `FRONTEND_UPSTREAM`。
+### 3. Dokploy 部署后端 (Compose)
 
-如果前端尚未容器化，可临时使用 `docker-compose.override.yml` 挂载静态文件作为过渡：
-
-```yaml
-# docker-compose.override.yml (临时，正式上线后删除)
-services:
-  frontend:
-    image: caddy:2
-    volumes:
-      - /path/to/inner-caddyfile:/etc/caddy/Caddyfile:ro
-      - /path/to/front-static:/srv:ro
-```
-
-### 3. 启动后端栈
-
-```bash
-cd deploy/prod
-docker compose up -d --build
-```
-
-这会启动 5 个服务：`backend`、`worker`、`postgres`、`redis`、`caddy`。
-
-如果有 `docker-compose.override.yml`，`frontend` 也会一并启动。
+后端和系统环境通过 Dokploy Compose 部署：
+1. **Name**：填入 `official-backend`
+2. **Compose Path**：填 `deploy/prod/docker-compose.yml`
+3. **Environment**：将上述填好的 `.env` 内容粘贴进去。一定要包含：`FRONTEND_UPSTREAM=http://official-front:80`
+4. **Domains (Traefik)**：为该 Compose 分配对外域名。
+   - 域名：`app.your-domain.com` -> 容器：`official-backend-caddy`，端口：80
+   - 域名：`api.your-domain.com` -> 容器：`official-backend-caddy`，端口：80
+5. 保存即可。Dokploy Traefik 会全权处理外网 HTTPS 证书和动态代理。
 
 ### 4. 验证
 
