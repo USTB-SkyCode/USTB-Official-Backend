@@ -204,6 +204,7 @@ def test_user_skin_returns_vskin_url_from_headers(monkeypatch):
 			'data': {
 				'skin_url': '/skin-origin-proxy/static/textures/abc123hash.png',
 				'skin_version': 'abc123hash',
+				'skin_model': '',
 			},
 			'error': None,
 		}
@@ -238,6 +239,7 @@ def test_user_skin_returns_empty_on_not_found(monkeypatch):
 			'data': {
 				'skin_url': '',
 				'skin_version': '',
+				'skin_model': '',
 			},
 			'error': None,
 		}
@@ -264,6 +266,7 @@ def test_user_skin_returns_empty_for_non_ustb_provider(monkeypatch):
 			'data': {
 				'skin_url': '',
 				'skin_version': '',
+				'skin_model': '',
 			},
 			'error': None,
 		}
