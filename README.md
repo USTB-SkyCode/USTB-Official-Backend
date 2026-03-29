@@ -86,6 +86,142 @@ OAuth Provider 按需填写（至少启用一种登录方式）：
 
 完整变量说明见 [deploy/prod/env.example](deploy/prod/env.example)。
 
+#### Secret 生成
+
+当前部署流程不会自动生成生产密钥。建议在本地或服务器上手动生成后，保存到 Dokploy 的 Environment / Secret 中。
+
+```bash
+cd Official-backend
+python generate_key.py   # 运行两次，分别填入 SECRET_KEY / FILE_DOWNLOAD_TOKEN_SECRET
+```
+
+建议单独再准备一个强密码作为 `PGSQL_PASSWORD`，不要复用上述两个密钥。
+
+#### 推荐生产 .env（www.ustb.world / api.ustb.world）
+
+下面这份可直接作为 Dokploy Compose 的 Environment 起点，替换尖括号占位符即可：
+
+```env
+SECRET_KEY=<replace-with-random-hex-32-bytes>
+FILE_DOWNLOAD_TOKEN_SECRET=<replace-with-another-random-hex-32-bytes>
+FILE_DOWNLOAD_TOKEN_SALT=file-download-token
+FILE_DOWNLOAD_TOKEN_TTL=300
+
+STRICT_ENV=true
+APP_ENV=production
+
+FLASK_DEBUG=false
+FLASK_HOST=0.0.0.0
+FLASK_PORT=5000
+APP_TIMEZONE=Asia/Shanghai
+
+PGSQL_HOST=postgres
+PGSQL_PORT=5432
+PGSQL_DB=ustbhome
+PGSQL_USER=postgres
+PGSQL_PASSWORD=<replace-with-strong-db-password>
+
+REDIS_URL=redis://redis:6379/0
+SESSION_LIFETIME=3600
+SECURE_COOKIES=true
+SESSION_DEBUG=false
+
+FILE_DOWNLOAD_BASE_PATH=/downloads
+FILE_STORAGE_ROOT=/srv/file-data
+
+MCA_ACCESS_LEVEL=public
+MCA_BASE_URL=/resource/mca/ustb
+MCA_STORAGE_ROOT=/srv/ustb/mca
+MCA_STORAGE_MOUNT=/srv/mca
+
+CORS_ALLOWED_ORIGINS=https://www.ustb.world,https://api.ustb.world
+OAUTH_ALLOWED_REDIRECT_HOSTS=www.ustb.world
+OAUTH_ALLOW_HTTP_LOCALHOST=false
+APP_ALLOWED_RETURN_HOSTS=www.ustb.world
+APP_ALLOW_HTTP_LOCALHOST=false
+DEFAULT_LOGIN_SUCCESS_URL=/home
+TRUSTED_HOSTS=www.ustb.world,api.ustb.world
+
+SAME_ORIGIN_ASSET_PROXY_PATH=/skin-origin-proxy
+ASSET_PROXY_ALLOWED_HOSTS=skin.ustb.world,avatars.githubusercontent.com,skin.mualliance.ltd
+ASSET_PROXY_TIMEOUT=10
+
+PROXY_FIX_X_FOR=1
+PROXY_FIX_X_PROTO=1
+PROXY_FIX_X_HOST=1
+MAX_CONTENT_LENGTH=1048576
+WTF_CSRF_SSL_STRICT=false
+
+RSS_SOURCE_URL=
+RSS_REFRESH_ENABLED=true
+RSS_REFRESH_INTERVAL=1800
+
+API_BASE_URL=https://www.ustb.world
+AUTH_BASE_URL=https://www.ustb.world
+APP_BASE_URL=https://www.ustb.world
+SKIN_API_BASE_URL=https://skin.ustb.world/skinapi
+
+MODEL_BASE_URL=/model
+MODEL_COMPILED_BASE_URL=/model/compiled
+MODEL_ASSET_BASE_URL=/model/assest
+BASIC_BASE_URL=/basic
+BASIC_COMPILED_BASE_URL=/basic/compiled
+BASIC_ASSET_BASE_URL=/basic/assest
+SKIN_BASE_URL=/assets/skin
+DEV_BACKEND_PROXY_ENABLED=false
+
+APP_SITE_HOST=www.ustb.world
+API_SITE_HOST=api.ustb.world
+
+BACKEND_UPSTREAM=http://backend:5000
+FRONTEND_UPSTREAM=http://official-front:80
+
+GITHUB_CLIENT_ID=
+GITHUB_CLIENT_SECRET=
+GITHUB_REDIRECT_URI=https://www.ustb.world/auth/github/callback
+
+MUA_CLIENT_ID=
+MUA_CLIENT_SECRET=
+MUA_REDIRECT_URI=https://www.ustb.world/auth/mua/callback
+
+USTB_CLIENT_ID=
+USTB_CLIENT_SECRET=
+USTB_BASE_URL=
+USTB_REDIRECT_URI=https://www.ustb.world/auth/ustb/callback
+```
+
+如果暂时不用某个 OAuth Provider，对应那组变量留空即可。
+
+#### 宿主机路径
+
+当前生产配置只需要显式规划 `MCA_STORAGE_ROOT`。推荐使用稳定的绝对路径，例如：`/srv/ustb/mca`。
+
+- `MCA_STORAGE_ROOT` 是宿主机目录
+- `MCA_STORAGE_MOUNT` 是挂载到 Caddy 容器内的目录，通常保持 `/srv/mca`
+- `FILE_STORAGE_ROOT=/srv/file-data` 是容器内路径；它当前映射到仓库内的 `file-data/` 目录
+
+如果后续希望把下载文件也独立出代码仓库，可以再把 compose 中的 `../../file-data` 改成宿主机绝对路径或 named volume。
+
+#### 路径权限
+
+至少保证两件事：
+
+- `MCA_STORAGE_ROOT` 对 Caddy 容器可读
+- `file-data/` 对 `backend` 和 `worker` 可写
+
+Linux 宿主机可先准备：
+
+```bash
+sudo mkdir -p /srv/ustb/mca
+sudo chmod 755 /srv/ustb
+sudo chmod 755 /srv/ustb/mca
+
+mkdir -p file-data
+chmod 775 file-data
+```
+
+如果 `MCA_STORAGE_ROOT` 下已有静态资源，通常目录权限 `755`、文件权限 `644` 即可。
+
 ### 2. Dokploy 部署前端 (Application)
 
 前端作为独立 Dokploy Application 部署：
