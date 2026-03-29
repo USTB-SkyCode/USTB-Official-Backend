@@ -159,7 +159,9 @@ FRONTEND_BUILD_CONTEXT=https://github.com/USTB-SkyCode/USTB-Official-Website.git
    - 域名：`api.your-domain.com` -> 容器：`official-backend-caddy`，端口：80
 5. 保存即可。Dokploy Traefik 处理外网 HTTPS 证书和到 Caddy 的转发，Caddy 负责容器内路由和响应头。
 
-Dokploy 应用关联后端仓库。前端仓库可以通过仓库内的 GitHub Action 调用同一个 Dokploy redeploy hook 完成自动部署；重建时 `frontend` 服务会从 `FRONTEND_BUILD_CONTEXT` 指向的 GitHub 仓库拉取最新提交。
+Dokploy 应用关联后端仓库。后端仓库触发这份 Compose 的部署时，`frontend` 服务会按 `build.context` 自动从 `FRONTEND_BUILD_CONTEXT` 指向的 GitHub 仓库拉取源码并重新构建。
+
+前端仓库的推送不会被 Dokploy 自动感知，因为 Dokploy 监听的是这份 Compose 绑定的后端仓库；前端仓库需要通过仓库内的 GitHub Action 调用同一个 Dokploy redeploy hook，触发这份 Compose 再部署一次，`frontend` 服务才会重新拉取前端最新提交并构建。
 
 `DOKPLOY_REDEPLOY_HOOK_URL` 是部署者自己的仓库 Secret。未配置该 Secret 时，前端仓库 workflow 会直接跳过，不影响与该部署无关的使用者；需要自动部署的人在自己的仓库或 fork 中填入自己的 Dokploy redeploy hook 即可。
 
