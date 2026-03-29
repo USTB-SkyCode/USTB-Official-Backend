@@ -12,6 +12,13 @@ services:
     volumes:
       - runtime_secrets:/run-secrets
 
+  frontend:
+    build:
+      context: "${FRONTEND_BUILD_CONTEXT:-https://github.com/USTB-SkyCode/USTB-Official-Website.git#main}"
+      dockerfile: Dockerfile
+    container_name: official-frontend
+    restart: unless-stopped
+
   backend:
     build:
       context: ../..
@@ -109,7 +116,7 @@ services:
       - ./.env
     environment:
       TZ: ${APP_TIMEZONE:-Asia/Shanghai}
-      FRONTEND_UPSTREAM: ${FRONTEND_UPSTREAM:-http://official-front:80}
+      FRONTEND_UPSTREAM: ${FRONTEND_UPSTREAM:-http://frontend:80}
       BACKEND_UPSTREAM: ${BACKEND_UPSTREAM:-http://backend:5000}
 #    ports:
 #      - "80:80"
@@ -122,6 +129,7 @@ services:
       - caddy_config:/config
     depends_on:
       - backend
+      - frontend
 
 volumes:
   runtime_secrets:

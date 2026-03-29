@@ -21,6 +21,7 @@ htmlcov/
 
 # Local runtime data
 file-data/
+deploy/dev/prodlike/
 
 # Editor files
 .vscode/

@@ -32,7 +32,7 @@ Client
         ├─ @backend (/api*, /auth*, /config.js, /diagnostics*) → backend:5000
         ├─ @mca (MCA 大文件) → forward_auth + file_server
         ├─ @downloads (/downloads/*) → forward_auth + file_server
-        └─ 其余所有请求 → frontend:80 (前端容器)
+        └─ 其余所有请求 → frontend:80 (同一 compose 内前端服务)
 ```
 
 公网证书由 Dokploy Traefik 负责，Caddy 只在容器网络内处理 HTTP 路由和响应头。
@@ -61,12 +61,13 @@ cp env.example .env
 | `MCA_BASE_URL` | MCA 资源 URL 前缀（前端运行时 + Caddy 路由） | `/resource/mca/ustb` |
 | `MCA_STORAGE_ROOT` | MCA 文件宿主机路径 | `/srv/mca` |
 | `MCA_STORAGE_MOUNT` | MCA 挂载到 Caddy 容器内的路径 | `/srv/mca` |
+| `FRONTEND_BUILD_CONTEXT` | 前端构建上下文（供同一 compose 构建 frontend 服务） | `https://github.com/USTB-SkyCode/USTB-Official-Website.git#main` |
 
 可选但建议填写：
 
 | 变量 | 说明 | 默认值 |
 |---|---|---|
-| `FRONTEND_UPSTREAM` | 前端容器上游地址 | `http://official-front:80` |
+| `FRONTEND_UPSTREAM` | 前端容器上游地址 | `http://frontend:80` |
 | `BACKEND_UPSTREAM` | 后端上游地址 | `http://backend:5000` |
 | `SECRET_KEY` | 会话签名密钥；生产 compose 自动生成并持久化 | 自动生成 |
 | `FILE_DOWNLOAD_TOKEN_SECRET` | 文件下载令牌密钥；生产 compose 自动生成并持久化 | 自动生成 |
@@ -129,24 +130,38 @@ chmod 775 file-data
 
 如果 `MCA_STORAGE_ROOT` 下已有静态资源，通常目录权限 `755`、文件权限 `644` 即可。
 
-### 2. Dokploy 部署前端 (Application)
+### 2. 准备前端构建上下文
 
-前端作为独立 Dokploy Application 部署：
-1. **Name**：填入 `official-front`（必须一致，后端以此名在内网访问前端）
-2. **Build Type**：选择 `Dockerfile`
-3. **Dockerfile Path**：`Dockerfile` (前端根目录下已提供好自带 Caddy 的多阶段构建文件)
-4. 保存即可。无需分配域名。
+生产部署通过同一份 compose 直接构建 `frontend` 服务。
 
-### 3. Dokploy 部署后端 (Compose)
+`frontend` 服务默认直接从前端 GitHub 仓库构建：
 
-后端和系统环境通过 Dokploy Compose 部署：
+```bash
+https://github.com/USTB-SkyCode/USTB-Official-Website.git#main
+```
+
+Dokploy 环境变量里的默认写法也是这一条：
+
+```bash
+FRONTEND_BUILD_CONTEXT=https://github.com/USTB-SkyCode/USTB-Official-Website.git#main
+```
+
+如果需要，也可以把它改成宿主机本地路径或其它 Git URL；compose 只要求该上下文包含前端 `Dockerfile` 构建所需文件。
+
+### 3. Dokploy 部署单 Compose 栈
+
+前后端和系统环境通过同一份 Dokploy Compose 部署：
 1. **Name**：填入 `official-backend`
 2. **Compose Path**：填 `deploy/prod/docker-compose.yml`
-3. **Environment**：将上述填好的 `.env` 内容粘贴进去。前端 Application 名称使用 `official-front` 时，前端上游填写 `FRONTEND_UPSTREAM=http://official-front:80`。
+3. **Environment**：将上述填好的 `.env` 内容粘贴进去；保留默认 `FRONTEND_BUILD_CONTEXT` 即可直接从前端 GitHub 仓库构建，需要时也可以改成自己的 Git URL、本地路径或其它构建上下文。
 4. **Domains (Traefik)**：为该 Compose 分配对外域名。
    - 域名：`app.your-domain.com` -> 容器：`official-backend-caddy`，端口：80
    - 域名：`api.your-domain.com` -> 容器：`official-backend-caddy`，端口：80
 5. 保存即可。Dokploy Traefik 处理外网 HTTPS 证书和到 Caddy 的转发，Caddy 负责容器内路由和响应头。
+
+Dokploy 应用关联后端仓库。前端仓库可以通过仓库内的 GitHub Action 调用同一个 Dokploy redeploy hook 完成自动部署；重建时 `frontend` 服务会从 `FRONTEND_BUILD_CONTEXT` 指向的 GitHub 仓库拉取最新提交。
+
+`DOKPLOY_REDEPLOY_HOOK_URL` 是部署者自己的仓库 Secret。未配置该 Secret 时，前端仓库 workflow 会直接跳过，不影响与该部署无关的使用者；需要自动部署的人在自己的仓库或 fork 中填入自己的 Dokploy redeploy hook 即可。
 
 ### 4. 验证
 
@@ -175,7 +190,7 @@ docker compose pull        # 如果使用预构建镜像
 docker compose up -d --build --remove-orphans
 ```
 
-后端代码更新只需 rebuild `backend` + `worker`，数据库和 Redis 持久化在 Docker volumes 中。
+前端源码目录、后端代码或 Caddy 配置更新后，都可以直接重跑同一条 `docker compose up -d --build --remove-orphans`；数据库和 Redis 仍然持久化在 Docker volumes 中。
 
 ---
 
