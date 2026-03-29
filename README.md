@@ -1,12 +1,12 @@
 ﻿# Official-backend
 
-Flask 后端 + Caddy 边缘 + Docker Compose 一体化部署。
+Flask 后端 + Caddy 网关 + Docker Compose 一体化部署。
 
 ## 技术栈
 
 - Python 3.12 / Flask / Gunicorn
 - PostgreSQL 16 / Redis 7
-- Caddy 2（边缘反代、TLS、COOP/COEP）
+- Caddy 2（内网 HTTP 反代、缓存/鉴权路由、COOP/COEP）
 - Docker Compose
 
 ## 快速开始（本地开发）
@@ -27,14 +27,15 @@ docker compose -f deploy/dev/docker-compose.yml up -d --build
 
 ```
 Client
-  └─ Caddy (边缘, :80/:443, 自动 TLS)
-       ├─ @backend (/api*, /auth*, /config.js, /diagnostics*) → backend:5000
-       ├─ @mca (MCA 大文件) → forward_auth + file_server
-       ├─ @downloads (/downloads/*) → forward_auth + file_server
-       └─ 其余所有请求 → frontend:80 (前端容器)
+  └─ Dokploy Traefik (:80/:443, TLS 终止)
+     └─ Caddy (容器内 HTTP 路由)
+        ├─ @backend (/api*, /auth*, /config.js, /diagnostics*) → backend:5000
+        ├─ @mca (MCA 大文件) → forward_auth + file_server
+        ├─ @downloads (/downloads/*) → forward_auth + file_server
+        └─ 其余所有请求 → frontend:80 (前端容器)
 ```
 
-前端以独立容器（Dokploy Application）运行，边缘 Caddy 通过 `reverse_proxy` 将非后端请求转发到前端。
+公网证书由 Dokploy Traefik 负责，Caddy 只在容器网络内处理 HTTP 路由和响应头。
 
 ### 1. 准备环境变量
 
@@ -50,8 +51,8 @@ cp env.example .env
 | `SECRET_KEY` | Flask 会话签名密钥。`python -c "import secrets; print(secrets.token_hex(32))"` 生成 | `a1b2c3...` |
 | `FILE_DOWNLOAD_TOKEN_SECRET` | 文件下载令牌签名密钥。建议独立于 SECRET_KEY | `d4e5f6...` |
 | `PGSQL_PASSWORD` | PostgreSQL 密码。需与 compose 中 `POSTGRES_PASSWORD` 一致 | `your-db-pass` |
-| `APP_SITE_HOST` | 前端站点域名（Caddy 自动申请 TLS） | `app.your-domain.com` |
-| `API_SITE_HOST` | 后端 API 域名（Caddy 自动申请 TLS） | `api.your-domain.com` |
+| `APP_SITE_HOST` | 前端站点公网域名（Traefik 转发时保留 Host） | `app.your-domain.com` |
+| `API_SITE_HOST` | 后端 API 公网域名（Traefik 转发时保留 Host） | `api.your-domain.com` |
 | `CORS_ALLOWED_ORIGINS` | CORS 允许来源，逗号分隔 | `https://app.your-domain.com` |
 | `OAUTH_ALLOWED_REDIRECT_HOSTS` | OAuth 回调允许的 host | `app.your-domain.com` |
 | `APP_ALLOWED_RETURN_HOSTS` | 登录成功跳转允许的 host | `app.your-domain.com` |
@@ -68,7 +69,7 @@ cp env.example .env
 
 | 变量 | 说明 | 默认值 |
 |---|---|---|
-| `FRONTEND_UPSTREAM` | 前端容器上游地址 | `http://frontend:80` |
+| `FRONTEND_UPSTREAM` | 前端容器上游地址 | `http://official-front:80` |
 | `BACKEND_UPSTREAM` | 后端上游地址 | `http://backend:5000` |
 | `STRICT_ENV` | 严格校验，缺少必填变量时启动报错 | `true`（生产自动开启） |
 | `SECURE_COOKIES` | HTTPS cookie | `true` |
@@ -98,11 +99,11 @@ OAuth Provider 按需填写（至少启用一种登录方式）：
 后端和系统环境通过 Dokploy Compose 部署：
 1. **Name**：填入 `official-backend`
 2. **Compose Path**：填 `deploy/prod/docker-compose.yml`
-3. **Environment**：将上述填好的 `.env` 内容粘贴进去。一定要包含：`FRONTEND_UPSTREAM=http://official-front:80`
+3. **Environment**：将上述填好的 `.env` 内容粘贴进去。默认前端上游已是 `FRONTEND_UPSTREAM=http://official-front:80`；只有前端 Application 改名时才需要一起修改。
 4. **Domains (Traefik)**：为该 Compose 分配对外域名。
    - 域名：`app.your-domain.com` -> 容器：`official-backend-caddy`，端口：80
    - 域名：`api.your-domain.com` -> 容器：`official-backend-caddy`，端口：80
-5. 保存即可。Dokploy Traefik 会全权处理外网 HTTPS 证书和动态代理。
+5. 保存即可。Dokploy Traefik 会全权处理外网 HTTPS 证书和到 Caddy 的转发，Caddy 本身不再负责公网证书。
 
 ### 4. 验证
 

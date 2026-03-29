@@ -86,7 +86,7 @@ services:
       - ./.env
     environment:
       TZ: ${APP_TIMEZONE:-Asia/Shanghai}
-      FRONTEND_UPSTREAM: ${FRONTEND_UPSTREAM:-http://frontend:80}
+      FRONTEND_UPSTREAM: ${FRONTEND_UPSTREAM:-http://official-front:80}
       BACKEND_UPSTREAM: ${BACKEND_UPSTREAM:-http://backend:5000}
 #    ports:
 #      - "80:80"

@@ -14,12 +14,12 @@
 	}
 }
 
-{$API_SITE_HOST} {
+http://{$API_SITE_HOST} {
 	import common_headers
 	reverse_proxy {$BACKEND_UPSTREAM}
 }
 
-{$APP_SITE_HOST} {
+http://{$APP_SITE_HOST} {
 	import common_headers
 	import cross_origin_isolation_headers
 
