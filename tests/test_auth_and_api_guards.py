@@ -1421,8 +1421,6 @@ def test_rss_sync_returns_conflict_when_sync_already_running(monkeypatch):
 
 
 def test_mc_status_refresh_skips_when_advisory_lock_is_held(monkeypatch):
-	manager = object.__new__(api_routes.MCLocalStorage.__mro__[0])
-
 	class DummyStorage:
 		def __init__(self):
 			self.closed = False

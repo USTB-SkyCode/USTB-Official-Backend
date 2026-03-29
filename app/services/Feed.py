@@ -140,10 +140,7 @@ class FeedStorage(LocalStorage):
 				)
 			self.conn.commit()
 		except Exception as exc:
-			try:
-				self.conn.rollback()
-			except Exception:
-				pass
+			self._safe_rollback()
 			raise LocalStorageError(str(exc)) from exc
 
 
@@ -263,10 +260,7 @@ class RssFeedService:
 		except LocalStorageError:
 			raise
 		except Exception as exc:
-			try:
-				self.storage.conn.rollback()
-			except Exception:
-				pass
+			self.storage._safe_rollback()
 			raise FeedServiceError(str(exc)) from exc
 		finally:
 			if lock_acquired:

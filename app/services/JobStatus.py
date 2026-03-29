@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Any
 
 from psycopg2.extras import Json
@@ -39,10 +39,7 @@ class JobStatusStorage(LocalStorage):
                 )
             self.conn.commit()
         except Exception as exc:
-            try:
-                self.conn.rollback()
-            except Exception:
-                pass
+            self._safe_rollback()
             raise LocalStorageError(str(exc)) from exc
 
 
@@ -200,8 +197,5 @@ class JobStatusService:
                 )
             self.storage.conn.commit()
         except Exception as exc:
-            try:
-                self.storage.conn.rollback()
-            except Exception:
-                pass
+            self.storage._safe_rollback()
             raise JobStatusError(str(exc)) from exc

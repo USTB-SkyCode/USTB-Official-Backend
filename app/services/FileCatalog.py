@@ -94,10 +94,7 @@ class FileCatalogStorage(LocalStorage):
                 )
             self.conn.commit()
         except Exception as exc:
-            try:
-                self.conn.rollback()
-            except Exception:
-                pass
+            self._safe_rollback()
             raise LocalStorageError(str(exc)) from exc
 
     def get_file_row(self, file_id: int) -> dict[str, Any] | None:
@@ -298,10 +295,7 @@ class FileCatalogService:
             self.storage.conn.commit()
             return self._serialize_file_row(row)
         except Exception as exc:
-            try:
-                self.storage.conn.rollback()
-            except Exception:
-                pass
+            self.storage._safe_rollback()
             raise FileCatalogError(str(exc)) from exc
 
     def update_file(self, file_id: int, **updates: Any) -> dict[str, Any] | None:
@@ -352,10 +346,7 @@ class FileCatalogService:
             self.storage.conn.commit()
             return self._serialize_file_row(row)
         except Exception as exc:
-            try:
-                self.storage.conn.rollback()
-            except Exception:
-                pass
+            self.storage._safe_rollback()
             raise FileCatalogError(str(exc)) from exc
 
     def issue_download_token(self, file_id: int, *, logged_in: bool, permission: int) -> dict[str, Any]:
@@ -422,10 +413,7 @@ class FileCatalogService:
             self.storage.conn.commit()
             return self._serialize_audit_row(row)
         except Exception as exc:
-            try:
-                self.storage.conn.rollback()
-            except Exception:
-                pass
+            self.storage._safe_rollback()
             raise FileCatalogError(str(exc)) from exc
 
     def list_download_audits(

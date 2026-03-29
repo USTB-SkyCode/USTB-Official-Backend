@@ -1,6 +1,11 @@
+import logging
+
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from app.config import Config
+
+
+logger = logging.getLogger(__name__)
 
 
 class LocalStorageError(Exception):
@@ -27,16 +32,26 @@ class LocalStorage:
             # Wrap DB connection errors
             raise LocalStorageError(str(e))
 
+    def _safe_rollback(self) -> None:
+        try:
+            self.conn.rollback()
+        except Exception:
+            logger.debug('Rollback skipped because the database connection is unavailable', exc_info=True)
+
+    def _safe_close(self) -> None:
+        try:
+            if hasattr(self, 'conn') and self.conn:
+                self.conn.close()
+        except Exception:
+            logger.debug('Connection close skipped because the database connection is unavailable', exc_info=True)
+
     def __query(self, sql, params=None):
         try:
             with self.conn.cursor() as cursor:
                 cursor.execute(sql, params or ())
                 return cursor.fetchall()
         except psycopg2.Error as e:
-            try:
-                self.conn.rollback()
-            except Exception:
-                pass
+            self._safe_rollback()
             raise LocalStorageError(str(e))
         
     def __execute(self, sql, params=None):
@@ -46,21 +61,14 @@ class LocalStorage:
                 self.conn.commit()
                 try:
                     return cursor.fetchone()
-                except Exception:
+                except psycopg2.ProgrammingError:
                     return None
         except psycopg2.Error as e:
-            try:
-                self.conn.rollback()
-            except Exception:
-                pass
+            self._safe_rollback()
             raise LocalStorageError(str(e))
         
     def close(self):
-        try:
-            if hasattr(self, 'conn') and self.conn:
-                self.conn.close()
-        except Exception:
-            pass
+        self._safe_close()
 
     def try_advisory_lock(self, key: int) -> bool:
         try:
@@ -69,10 +77,7 @@ class LocalStorage:
                 row = cursor.fetchone() or {}
                 return bool(row.get('locked'))
         except psycopg2.Error as e:
-            try:
-                self.conn.rollback()
-            except Exception:
-                pass
+            self._safe_rollback()
             raise LocalStorageLockError(str(e))
 
     def advisory_unlock(self, key: int) -> None:
@@ -80,9 +85,6 @@ class LocalStorage:
             with self.conn.cursor() as cursor:
                 cursor.execute('SELECT pg_advisory_unlock(%s);', (key,))
         except psycopg2.Error as e:
-            try:
-                self.conn.rollback()
-            except Exception:
-                pass
+            self._safe_rollback()
             raise LocalStorageLockError(str(e))
 

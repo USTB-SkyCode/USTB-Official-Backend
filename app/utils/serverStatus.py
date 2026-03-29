@@ -152,7 +152,7 @@ def ping_bedrock(host: str, port: int, timeout: int) -> Dict[str, Any]:
             raise ValueError("Bad bedrock response")
 
         off = 9
-        server_id = struct.unpack_from(">Q", data, off)[0]
+        struct.unpack_from(">Q", data, off)
         off += 24  # skip ping_id + server_id + 16 reserved
         name_len = struct.unpack_from(">H", data, off)[0]
         off += 2

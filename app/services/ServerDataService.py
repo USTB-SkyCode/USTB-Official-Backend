@@ -14,7 +14,6 @@ from typing import Any, Iterable, Optional, Tuple
 
 import psycopg2
 from psycopg2.extras import Json
-from psycopg2.extensions import connection as PgConnection
 
 from app.services.JobStatus import JobStatusService
 from app.services.LocalStorage import LocalStorage, LocalStorageError, LocalStorageLockError
@@ -225,7 +224,7 @@ class MCLocalStorage(LocalStorage):
         插入或更新服务器记录。
         当 id 为 None 时视为新增，返回 (id, ip, name)。
         """
-        if not ip:
+        if id is None and not ip:
             raise LocalStorageError("参数 ip 不能为空")
 
         try:
@@ -342,10 +341,7 @@ class MCLocalStorage(LocalStorage):
 
     def _safe_rollback(self) -> None:
         """安全地回滚事务，忽略关闭连接时的报错。"""
-        try:
-            self.conn.rollback()
-        except Exception:
-            pass
+        super()._safe_rollback()
 
 
 def normalize_status_payload(raw_status: Any) -> dict[str, Any] | None:

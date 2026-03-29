@@ -194,16 +194,13 @@ def _serialize_dynamic_item(item: Any) -> Any:
 	We try common fallbacks and return a plain dict.
 	"""
 	# If it's already a dict-like
-	try:
-		if isinstance(item, dict):
-			return item
-	except Exception:
-		pass
+	if isinstance(item, dict):
+		return item
 
 	out = {}
 	# try .__dict__ first
-	try:
-		if hasattr(item, '__dict__'):
+	if hasattr(item, '__dict__'):
+		try:
 			for k, v in vars(item).items():
 				try:
 					json.dumps(v)
@@ -212,28 +209,25 @@ def _serialize_dynamic_item(item: Any) -> Any:
 					# fallback to string
 					out[k] = str(v)
 			return out
-	except Exception:
-		pass
+		except TypeError:
+			out = {}
 
 	# try mapping-like access
-	try:
-		for k in ('desc', 'card', 'user', 'dynamic_id', 'id'):
+	for k in ('desc', 'card', 'user', 'dynamic_id', 'id'):
+		try:
+			v = item[k]
+		except Exception:
 			try:
-				v = item[k]
+				v = getattr(item, k)
 			except Exception:
-				try:
-					v = getattr(item, k)
-				except Exception:
-					continue
-			try:
-				json.dumps(v)
-				out[k] = v
-			except Exception:
-				out[k] = str(v)
-		if out:
-			return out
-	except Exception:
-		pass
+				continue
+		try:
+			json.dumps(v)
+			out[k] = v
+		except Exception:
+			out[k] = str(v)
+	if out:
+		return out
 
 	# last resort
 	return str(item)
