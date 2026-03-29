@@ -13,8 +13,8 @@ Flask 后端 + Caddy 网关 + Docker Compose 一体化部署。
 
 ```bash
 cp .env.example .env
-python generate_key.py          # 如需手动指定，可生成 SECRET_KEY / FILE_DOWNLOAD_TOKEN_SECRET / PGSQL_PASSWORD
-# 将生成值按需写入 .env
+python generate_key.py          # 生成 SECRET_KEY / FILE_DOWNLOAD_TOKEN_SECRET / PGSQL_PASSWORD
+# 将生成值写入 .env
 
 docker compose -f deploy/dev/docker-compose.yml up -d --build
 ```
@@ -68,9 +68,9 @@ cp env.example .env
 |---|---|---|
 | `FRONTEND_UPSTREAM` | 前端容器上游地址 | `http://official-front:80` |
 | `BACKEND_UPSTREAM` | 后端上游地址 | `http://backend:5000` |
-| `SECRET_KEY` | 会话签名密钥；留空时生产首启自动生成并持久化 | 自动生成 |
-| `FILE_DOWNLOAD_TOKEN_SECRET` | 文件下载令牌密钥；留空时生产首启自动生成并持久化 | 自动生成 |
-| `PGSQL_PASSWORD` | 数据库密码；留空时生产首启自动生成并持久化 | 自动生成 |
+| `SECRET_KEY` | 会话签名密钥；生产 compose 自动生成并持久化 | 自动生成 |
+| `FILE_DOWNLOAD_TOKEN_SECRET` | 文件下载令牌密钥；生产 compose 自动生成并持久化 | 自动生成 |
+| `PGSQL_PASSWORD` | 数据库密码；生产 compose 自动生成并持久化 | 自动生成 |
 | `STRICT_ENV` | 严格校验，缺少必填变量时启动报错 | `true`（生产自动开启） |
 | `SECURE_COOKIES` | HTTPS cookie | `true` |
 | `REDIS_URL` | Redis 连接 | `redis://redis:6379/0` |
@@ -88,26 +88,26 @@ OAuth Provider 按需填写（至少启用一种登录方式）：
 
 #### Secret 生成
 
-生产 compose 首次启动时会自动生成并持久化 `SECRET_KEY`、`FILE_DOWNLOAD_TOKEN_SECRET`、`PGSQL_PASSWORD` 三项，不再要求先手填。
+生产 compose 自动生成并持久化 `SECRET_KEY`、`FILE_DOWNLOAD_TOKEN_SECRET`、`PGSQL_PASSWORD` 三项。
 
-如果你想显式指定这三项，再使用仓库自带脚本生成即可：
+仓库自带脚本用于手动生成固定值：
 
 ```bash
 cd Official-backend
 python generate_key.py
 ```
 
-自动生成的密钥会写入 `runtime_secrets` 命名卷并在后续重启时复用；只有主动删除该 volume 时才会重新生成。
+自动生成的密钥写入 `runtime_secrets` 命名卷，并在后续重启时复用。删除该 volume 后会重新生成。
 
 #### 宿主机路径
 
-当前生产配置只需要显式规划 `MCA_STORAGE_ROOT`。推荐使用稳定的绝对路径，例如：`/srv/ustb/mca`。
+生产配置显式规划 `MCA_STORAGE_ROOT`。推荐使用稳定的绝对路径，例如：`/srv/ustb/mca`。
 
 - `MCA_STORAGE_ROOT` 是宿主机目录
 - `MCA_STORAGE_MOUNT` 是挂载到 Caddy 容器内的目录，通常保持 `/srv/mca`
-- `FILE_STORAGE_ROOT=/srv/file-data` 是容器内路径；它当前映射到仓库内的 `file-data/` 目录
+- `FILE_STORAGE_ROOT=/srv/file-data` 是容器内路径，对应仓库内的 `file-data/` 目录
 
-如果后续希望把下载文件也独立出代码仓库，可以再把 compose 中的 `../../file-data` 改成宿主机绝对路径或 named volume。
+下载文件也可以改为宿主机绝对路径或 named volume。
 
 #### 路径权限
 
@@ -142,11 +142,11 @@ chmod 775 file-data
 后端和系统环境通过 Dokploy Compose 部署：
 1. **Name**：填入 `official-backend`
 2. **Compose Path**：填 `deploy/prod/docker-compose.yml`
-3. **Environment**：将上述填好的 `.env` 内容粘贴进去。默认前端上游已是 `FRONTEND_UPSTREAM=http://official-front:80`；只有前端 Application 改名时才需要一起修改。
+3. **Environment**：将上述填好的 `.env` 内容粘贴进去。前端 Application 名称使用 `official-front` 时，前端上游填写 `FRONTEND_UPSTREAM=http://official-front:80`。
 4. **Domains (Traefik)**：为该 Compose 分配对外域名。
    - 域名：`app.your-domain.com` -> 容器：`official-backend-caddy`，端口：80
    - 域名：`api.your-domain.com` -> 容器：`official-backend-caddy`，端口：80
-5. 保存即可。Dokploy Traefik 会全权处理外网 HTTPS 证书和到 Caddy 的转发，Caddy 本身不再负责公网证书。
+5. 保存即可。Dokploy Traefik 处理外网 HTTPS 证书和到 Caddy 的转发，Caddy 负责容器内路由和响应头。
 
 ### 4. 验证
 
