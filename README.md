@@ -13,8 +13,8 @@ Flask 后端 + Caddy 网关 + Docker Compose 一体化部署。
 
 ```bash
 cp .env.example .env
-python generate_key.py          # 生成 SECRET_KEY / FILE_DOWNLOAD_TOKEN_SECRET
-# 将生成值写入 .env
+python generate_key.py          # 如需手动指定，可生成 SECRET_KEY / FILE_DOWNLOAD_TOKEN_SECRET / PGSQL_PASSWORD
+# 将生成值按需写入 .env
 
 docker compose -f deploy/dev/docker-compose.yml up -d --build
 ```
@@ -48,9 +48,6 @@ cp env.example .env
 
 | 变量 | 说明 | 示例 |
 |---|---|---|
-| `SECRET_KEY` | Flask 会话签名密钥。`python -c "import secrets; print(secrets.token_hex(32))"` 生成 | `a1b2c3...` |
-| `FILE_DOWNLOAD_TOKEN_SECRET` | 文件下载令牌签名密钥。建议独立于 SECRET_KEY | `d4e5f6...` |
-| `PGSQL_PASSWORD` | PostgreSQL 密码。需与 compose 中 `POSTGRES_PASSWORD` 一致 | `your-db-pass` |
 | `APP_SITE_HOST` | 前端站点公网域名（Traefik 转发时保留 Host） | `app.your-domain.com` |
 | `API_SITE_HOST` | 后端 API 公网域名（Traefik 转发时保留 Host） | `api.your-domain.com` |
 | `CORS_ALLOWED_ORIGINS` | CORS 允许来源，逗号分隔 | `https://app.your-domain.com` |
@@ -71,6 +68,9 @@ cp env.example .env
 |---|---|---|
 | `FRONTEND_UPSTREAM` | 前端容器上游地址 | `http://official-front:80` |
 | `BACKEND_UPSTREAM` | 后端上游地址 | `http://backend:5000` |
+| `SECRET_KEY` | 会话签名密钥；留空时生产首启自动生成并持久化 | 自动生成 |
+| `FILE_DOWNLOAD_TOKEN_SECRET` | 文件下载令牌密钥；留空时生产首启自动生成并持久化 | 自动生成 |
+| `PGSQL_PASSWORD` | 数据库密码；留空时生产首启自动生成并持久化 | 自动生成 |
 | `STRICT_ENV` | 严格校验，缺少必填变量时启动报错 | `true`（生产自动开启） |
 | `SECURE_COOKIES` | HTTPS cookie | `true` |
 | `REDIS_URL` | Redis 连接 | `redis://redis:6379/0` |
@@ -88,109 +88,16 @@ OAuth Provider 按需填写（至少启用一种登录方式）：
 
 #### Secret 生成
 
-当前部署流程不会自动生成生产密钥。建议在本地或服务器上手动生成后，保存到 Dokploy 的 Environment / Secret 中。
+生产 compose 首次启动时会自动生成并持久化 `SECRET_KEY`、`FILE_DOWNLOAD_TOKEN_SECRET`、`PGSQL_PASSWORD` 三项，不再要求先手填。
+
+如果你想显式指定这三项，再使用仓库自带脚本生成即可：
 
 ```bash
 cd Official-backend
-python generate_key.py   # 运行两次，分别填入 SECRET_KEY / FILE_DOWNLOAD_TOKEN_SECRET
+python generate_key.py
 ```
 
-建议单独再准备一个强密码作为 `PGSQL_PASSWORD`，不要复用上述两个密钥。
-
-#### 推荐生产 .env（www.ustb.world / api.ustb.world）
-
-下面这份可直接作为 Dokploy Compose 的 Environment 起点，替换尖括号占位符即可：
-
-```env
-SECRET_KEY=<replace-with-random-hex-32-bytes>
-FILE_DOWNLOAD_TOKEN_SECRET=<replace-with-another-random-hex-32-bytes>
-FILE_DOWNLOAD_TOKEN_SALT=file-download-token
-FILE_DOWNLOAD_TOKEN_TTL=300
-
-STRICT_ENV=true
-APP_ENV=production
-
-FLASK_DEBUG=false
-FLASK_HOST=0.0.0.0
-FLASK_PORT=5000
-APP_TIMEZONE=Asia/Shanghai
-
-PGSQL_HOST=postgres
-PGSQL_PORT=5432
-PGSQL_DB=ustbhome
-PGSQL_USER=postgres
-PGSQL_PASSWORD=<replace-with-strong-db-password>
-
-REDIS_URL=redis://redis:6379/0
-SESSION_LIFETIME=3600
-SECURE_COOKIES=true
-SESSION_DEBUG=false
-
-FILE_DOWNLOAD_BASE_PATH=/downloads
-FILE_STORAGE_ROOT=/srv/file-data
-
-MCA_ACCESS_LEVEL=public
-MCA_BASE_URL=/resource/mca/ustb
-MCA_STORAGE_ROOT=/srv/ustb/mca
-MCA_STORAGE_MOUNT=/srv/mca
-
-CORS_ALLOWED_ORIGINS=https://www.ustb.world,https://api.ustb.world
-OAUTH_ALLOWED_REDIRECT_HOSTS=www.ustb.world
-OAUTH_ALLOW_HTTP_LOCALHOST=false
-APP_ALLOWED_RETURN_HOSTS=www.ustb.world
-APP_ALLOW_HTTP_LOCALHOST=false
-DEFAULT_LOGIN_SUCCESS_URL=/home
-TRUSTED_HOSTS=www.ustb.world,api.ustb.world
-
-SAME_ORIGIN_ASSET_PROXY_PATH=/skin-origin-proxy
-ASSET_PROXY_ALLOWED_HOSTS=skin.ustb.world,avatars.githubusercontent.com,skin.mualliance.ltd
-ASSET_PROXY_TIMEOUT=10
-
-PROXY_FIX_X_FOR=1
-PROXY_FIX_X_PROTO=1
-PROXY_FIX_X_HOST=1
-MAX_CONTENT_LENGTH=1048576
-WTF_CSRF_SSL_STRICT=false
-
-RSS_SOURCE_URL=
-RSS_REFRESH_ENABLED=true
-RSS_REFRESH_INTERVAL=1800
-
-API_BASE_URL=https://www.ustb.world
-AUTH_BASE_URL=https://www.ustb.world
-APP_BASE_URL=https://www.ustb.world
-SKIN_API_BASE_URL=https://skin.ustb.world/skinapi
-
-MODEL_BASE_URL=/model
-MODEL_COMPILED_BASE_URL=/model/compiled
-MODEL_ASSET_BASE_URL=/model/assest
-BASIC_BASE_URL=/basic
-BASIC_COMPILED_BASE_URL=/basic/compiled
-BASIC_ASSET_BASE_URL=/basic/assest
-SKIN_BASE_URL=/assets/skin
-DEV_BACKEND_PROXY_ENABLED=false
-
-APP_SITE_HOST=www.ustb.world
-API_SITE_HOST=api.ustb.world
-
-BACKEND_UPSTREAM=http://backend:5000
-FRONTEND_UPSTREAM=http://official-front:80
-
-GITHUB_CLIENT_ID=
-GITHUB_CLIENT_SECRET=
-GITHUB_REDIRECT_URI=https://www.ustb.world/auth/github/callback
-
-MUA_CLIENT_ID=
-MUA_CLIENT_SECRET=
-MUA_REDIRECT_URI=https://www.ustb.world/auth/mua/callback
-
-USTB_CLIENT_ID=
-USTB_CLIENT_SECRET=
-USTB_BASE_URL=
-USTB_REDIRECT_URI=https://www.ustb.world/auth/ustb/callback
-```
-
-如果暂时不用某个 OAuth Provider，对应那组变量留空即可。
+自动生成的密钥会写入 `runtime_secrets` 命名卷并在后续重启时复用；只有主动删除该 volume 时才会重新生成。
 
 #### 宿主机路径
 
@@ -284,9 +191,3 @@ tests/            测试代码
 worker.py         周期任务进程入口
 wsgi.py           Gunicorn Web 入口
 ```
-
-## 公开协作约定
-
-- 基于 `.env.example` 或 `deploy/*/env.example` 准备本地环境变量
-- 不要提交真实密钥、数据库密码或 OAuth secret
-- 不要把缓存目录、历史草稿和内部文档纳入版本控制

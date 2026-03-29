@@ -1,4 +1,17 @@
 services:
+  secrets-init:
+    build:
+      context: ../..
+      dockerfile: deploy/common/Dockerfile
+    container_name: official-backend-secrets-init
+    restart: "no"
+    env_file:
+      - ./.env
+    working_dir: /app
+    command: python deploy/prod/scripts/ensure_runtime_secrets.py
+    volumes:
+      - runtime_secrets:/run-secrets
+
   backend:
     build:
       context: ../..
@@ -12,10 +25,13 @@ services:
       STRICT_ENV: ${STRICT_ENV:-true}
       GUNICORN_RELOAD: "false"
     working_dir: /app
-    command: gunicorn --config gunicorn.conf.py wsgi:app
+    command: /bin/sh -lc ". /run-secrets/runtime-secrets.env; export SECRET_KEY FILE_DOWNLOAD_TOKEN_SECRET PGSQL_PASSWORD; exec gunicorn --config gunicorn.conf.py wsgi:app"
     volumes:
+      - runtime_secrets:/run-secrets
       - ../../file-data:/srv/file-data
     depends_on:
+      secrets-init:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
@@ -38,10 +54,13 @@ services:
       TZ: ${APP_TIMEZONE:-Asia/Shanghai}
       STRICT_ENV: ${STRICT_ENV:-true}
     working_dir: /app
-    command: python worker.py
+    command: /bin/sh -lc ". /run-secrets/runtime-secrets.env; export SECRET_KEY FILE_DOWNLOAD_TOKEN_SECRET PGSQL_PASSWORD; exec python worker.py"
     volumes:
+      - runtime_secrets:/run-secrets
       - ../../file-data:/srv/file-data
     depends_on:
+      secrets-init:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
@@ -54,10 +73,14 @@ services:
     environment:
       POSTGRES_DB: ustbhome
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${PGSQL_PASSWORD}
+      POSTGRES_PASSWORD_FILE: /run-secrets/PGSQL_PASSWORD
       TZ: ${APP_TIMEZONE:-Asia/Shanghai}
     volumes:
+      - runtime_secrets:/run-secrets
       - postgres_data:/var/lib/postgresql/data
+    depends_on:
+      secrets-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d ustbhome"]
       interval: 10s
@@ -101,6 +124,7 @@ services:
       - backend
 
 volumes:
+  runtime_secrets:
   postgres_data:
   redis_data:
   caddy_data:
