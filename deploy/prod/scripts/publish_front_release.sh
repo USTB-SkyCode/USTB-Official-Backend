@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-STATIC_ROOT="/srv/ustb/prod/front-static"
+STATIC_ROOT="${FRONTEND_STATIC_ROOT:-}"
 SITE_URL=""
 KEEP_RELEASES=3
 ARCHIVE_PATH=""
@@ -129,6 +129,10 @@ fi
 
 if [[ -z "$ARCHIVE_PATH" && -z "$SOURCE_DIR" ]]; then
   die "One of --archive or --source-dir is required"
+fi
+
+if [[ -z "$STATIC_ROOT" ]]; then
+  die "--static-root is required (or set FRONTEND_STATIC_ROOT to the host static release root)"
 fi
 
 if [[ "$RUN_SMOKE_CHECKS" -eq 1 && -z "$SITE_URL" ]]; then

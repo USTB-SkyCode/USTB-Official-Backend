@@ -1,7 +1,6 @@
 # Secrets and local environment
 .env
 .env.*
-!.env.example
 deploy/**/.env
 deploy/**/.env.*
 !deploy/**/env.example
@@ -22,6 +21,7 @@ htmlcov/
 # Local runtime data
 file-data/
 deploy/dev/prodlike/
+deploy/prod/docker-compose.traefik-lab.yml
 
 # Editor files
 .vscode/

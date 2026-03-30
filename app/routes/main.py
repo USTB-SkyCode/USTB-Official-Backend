@@ -31,12 +31,6 @@ def _build_runtime_app_config(config):
 		'APP_BASE_URL': _strip_trailing_slash(config.get('RUNTIME_CONFIG_APP_BASE_URL')),
 		'SKIN_API_BASE_URL': _strip_trailing_slash(config.get('RUNTIME_CONFIG_SKIN_API_BASE_URL')),
 		'MCA_BASE_URL': _strip_trailing_slash(config.get('RUNTIME_CONFIG_MCA_BASE_URL')),
-		'MODEL_BASE_URL': _strip_trailing_slash(config.get('RUNTIME_CONFIG_MODEL_BASE_URL')) or '/model',
-		'MODEL_COMPILED_BASE_URL': _strip_trailing_slash(config.get('RUNTIME_CONFIG_MODEL_COMPILED_BASE_URL')) or '/model/compiled',
-		'MODEL_ASSET_BASE_URL': _strip_trailing_slash(config.get('RUNTIME_CONFIG_MODEL_ASSET_BASE_URL')) or '/model/assest',
-		'BASIC_BASE_URL': _strip_trailing_slash(config.get('RUNTIME_CONFIG_BASIC_BASE_URL')) or '/basic',
-		'BASIC_COMPILED_BASE_URL': _strip_trailing_slash(config.get('RUNTIME_CONFIG_BASIC_COMPILED_BASE_URL')) or '/basic/compiled',
-		'BASIC_ASSET_BASE_URL': _strip_trailing_slash(config.get('RUNTIME_CONFIG_BASIC_ASSET_BASE_URL')) or '/basic/assest',
 		'SKIN_BASE_URL': _strip_trailing_slash(config.get('RUNTIME_CONFIG_SKIN_BASE_URL')) or '/assets/skin',
 		'DEV_BACKEND_PROXY_ENABLED': bool(config.get('RUNTIME_CONFIG_DEV_BACKEND_PROXY_ENABLED', False)),
 	}

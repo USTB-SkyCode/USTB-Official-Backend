@@ -1,12 +1,31 @@
+x-backend-build: &backend-build
+  context: "${BACKEND_BUILD_CONTEXT:-../..}"
+  dockerfile: deploy/common/Dockerfile
+
+x-host-paths:
+  # ../../file-data means: from deploy/prod/ go back to repo root, then enter file-data/
+  file-data-rw: &file-data-rw "${FILE_DATA_HOST_PATH:-../../file-data}:/data/file-data"
+  file-data-ro: &file-data-ro "${FILE_DATA_HOST_PATH:-../../file-data}:/data/file-data:ro"
+
+x-app-env: &app-env
+  TZ: ${APP_TIMEZONE:-Asia/Shanghai}
+  STRICT_ENV: ${STRICT_ENV:-true}
+  PGSQL_HOST: postgres
+  PGSQL_PORT: 5432
+  PGSQL_DB: ustbhome
+  PGSQL_USER: postgres
+  REDIS_URL: redis://redis:6379/0
+  FILE_STORAGE_ROOT: /data/file-data
+
 services:
   secrets-init:
-    build:
-      context: ../..
-      dockerfile: deploy/common/Dockerfile
+    build: *backend-build
     container_name: official-backend-secrets-init
     restart: "no"
-    env_file:
-      - ./.env
+    environment:
+      SECRET_KEY: ${SECRET_KEY:-}
+      FILE_DOWNLOAD_TOKEN_SECRET: ${FILE_DOWNLOAD_TOKEN_SECRET:-}
+      PGSQL_PASSWORD: ${PGSQL_PASSWORD:-}
     working_dir: /app
     command: python deploy/prod/scripts/ensure_runtime_secrets.py
     volumes:
@@ -20,22 +39,21 @@ services:
     restart: unless-stopped
 
   backend:
-    build:
-      context: ../..
-      dockerfile: deploy/common/Dockerfile
+    build: *backend-build
     container_name: official-backend-app
     restart: unless-stopped
     env_file:
       - ./.env
     environment:
-      TZ: ${APP_TIMEZONE:-Asia/Shanghai}
-      STRICT_ENV: ${STRICT_ENV:-true}
+      <<: *app-env
       GUNICORN_RELOAD: "false"
+      FLASK_HOST: 0.0.0.0
+      FLASK_PORT: 5000
     working_dir: /app
     command: /bin/sh -lc ". /run-secrets/runtime-secrets.env; export SECRET_KEY FILE_DOWNLOAD_TOKEN_SECRET PGSQL_PASSWORD; exec gunicorn --config gunicorn.conf.py wsgi:app"
     volumes:
       - runtime_secrets:/run-secrets
-      - ../../file-data:/srv/file-data
+      - *file-data-rw
     depends_on:
       secrets-init:
         condition: service_completed_successfully
@@ -50,21 +68,18 @@ services:
       retries: 5
 
   worker:
-    build:
-      context: ../..
-      dockerfile: deploy/common/Dockerfile
+    build: *backend-build
     container_name: official-backend-worker
     restart: unless-stopped
     env_file:
       - ./.env
     environment:
-      TZ: ${APP_TIMEZONE:-Asia/Shanghai}
-      STRICT_ENV: ${STRICT_ENV:-true}
+      <<: *app-env
     working_dir: /app
     command: /bin/sh -lc ". /run-secrets/runtime-secrets.env; export SECRET_KEY FILE_DOWNLOAD_TOKEN_SECRET PGSQL_PASSWORD; exec python worker.py"
     volumes:
       - runtime_secrets:/run-secrets
-      - ../../file-data:/srv/file-data
+      - *file-data-rw
     depends_on:
       secrets-init:
         condition: service_completed_successfully
@@ -112,19 +127,22 @@ services:
     image: caddy:2
     container_name: official-backend-caddy
     restart: unless-stopped
-    env_file:
-      - ./.env
     environment:
       TZ: ${APP_TIMEZONE:-Asia/Shanghai}
+      APP_SITE_HOST: ${APP_SITE_HOST}
+      API_SITE_HOST: ${API_SITE_HOST}
+      MCA_BASE_URL: ${MCA_BASE_URL}
       FRONTEND_UPSTREAM: ${FRONTEND_UPSTREAM:-http://frontend:80}
       BACKEND_UPSTREAM: ${BACKEND_UPSTREAM:-http://backend:5000}
+    #    For manual ingress testing, keep host ports disabled here and use
+    #    docker-compose.traefik-lab.yml with the traefik-lab profile instead.
 #    ports:
 #      - "80:80"
 #      - "443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - ${MCA_STORAGE_ROOT}:${MCA_STORAGE_MOUNT}:ro
-      - ../../file-data:/srv/file-data:ro
+      - ${MCA_STORAGE_ROOT}:/data/mca:ro
+      - *file-data-ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:

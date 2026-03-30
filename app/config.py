@@ -75,7 +75,7 @@ class Config:
     FILE_DOWNLOAD_TOKEN_SALT = os.environ.get('FILE_DOWNLOAD_TOKEN_SALT', 'file-download-token')
     FILE_DOWNLOAD_TOKEN_TTL = _parse_int_env('FILE_DOWNLOAD_TOKEN_TTL', 300)
     FILE_DOWNLOAD_BASE_PATH = os.environ.get('FILE_DOWNLOAD_BASE_PATH', '/downloads').strip() or '/downloads'
-    FILE_STORAGE_ROOT = os.environ.get('FILE_STORAGE_ROOT', '/srv/file-data').strip() or '/srv/file-data'
+    FILE_STORAGE_ROOT = os.environ.get('FILE_STORAGE_ROOT', '/data/file-data').strip() or '/data/file-data'
     MCA_ACCESS_LEVEL = os.environ.get('MCA_ACCESS_LEVEL', 'public').strip().lower() or 'public'
     SAME_ORIGIN_ASSET_PROXY_PATH = os.environ.get('SAME_ORIGIN_ASSET_PROXY_PATH', '/skin-origin-proxy').strip() or '/skin-origin-proxy'
     ASSET_PROXY_ALLOWED_HOSTS = _parse_csv_env(
@@ -87,28 +87,6 @@ class Config:
     RUNTIME_CONFIG_AUTH_BASE_URL = _first_non_empty_env('AUTH_BASE_URL', 'VITE_AUTH_BASE_URL')
     RUNTIME_CONFIG_APP_BASE_URL = _first_non_empty_env('APP_BASE_URL', 'VITE_APP_BASE_URL')
     RUNTIME_CONFIG_MCA_BASE_URL = _first_non_empty_env('MCA_BASE_URL', 'VITE_MCA_BASE_URL')
-    RUNTIME_CONFIG_MODEL_BASE_URL = _first_non_empty_env('MODEL_BASE_URL', 'VITE_MODEL_BASE_URL', default='/model')
-    RUNTIME_CONFIG_MODEL_COMPILED_BASE_URL = _first_non_empty_env(
-        'MODEL_COMPILED_BASE_URL',
-        'VITE_MODEL_COMPILED_BASE_URL',
-        default='/model/compiled',
-    )
-    RUNTIME_CONFIG_MODEL_ASSET_BASE_URL = _first_non_empty_env(
-        'MODEL_ASSET_BASE_URL',
-        'VITE_MODEL_ASSET_BASE_URL',
-        default='/model/assest',
-    )
-    RUNTIME_CONFIG_BASIC_BASE_URL = _first_non_empty_env('BASIC_BASE_URL', 'VITE_BASIC_BASE_URL', default='/basic')
-    RUNTIME_CONFIG_BASIC_COMPILED_BASE_URL = _first_non_empty_env(
-        'BASIC_COMPILED_BASE_URL',
-        'VITE_BASIC_COMPILED_BASE_URL',
-        default='/basic/compiled',
-    )
-    RUNTIME_CONFIG_BASIC_ASSET_BASE_URL = _first_non_empty_env(
-        'BASIC_ASSET_BASE_URL',
-        'VITE_BASIC_ASSET_BASE_URL',
-        default='/basic/assest',
-    )
     RUNTIME_CONFIG_SKIN_API_BASE_URL = _first_non_empty_env('SKIN_API_BASE_URL', 'VITE_SKIN_API_BASE_URL')
     RUNTIME_CONFIG_SKIN_BASE_URL = _first_non_empty_env('SKIN_BASE_URL', 'VITE_SKIN_BASE_URL', default='/assets/skin')
     RUNTIME_CONFIG_DEV_BACKEND_PROXY_ENABLED = _parse_bool_env(

@@ -2,7 +2,7 @@ server {
     listen 80;
     server_name www.example.com;
 
-    root /srv/ustb/prod/front-dist;
+    root /data/official/front-dist;
     index index.html;
 
     sendfile on;
@@ -26,6 +26,12 @@ server {
     }
 
     location /assets/ {
+        expires 30d;
+        add_header Cache-Control "public, immutable";
+        try_files $uri =404;
+    }
+
+    location /packs/ {
         expires 30d;
         add_header Cache-Control "public, immutable";
         try_files $uri =404;

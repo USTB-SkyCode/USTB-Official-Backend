@@ -1,210 +1,122 @@
-﻿# Official-backend
+# Official-backend
 
-Flask 后端 + Caddy 网关 + Docker Compose 一体化部署。
+基于 Docker Compose 的 Flask 后端 + Caddy 网关部署堆栈。
 
-## 技术栈
+## Dokploy 生产部署
 
-- Python 3.12 / Flask / Gunicorn
-- PostgreSQL 16 / Redis 7
-- Caddy 2（内网 HTTP 反代、缓存/鉴权路由、COOP/COEP）
-- Docker Compose
+当前推荐部署入口是 [deploy/prod/docker-compose.yml](deploy/prod/docker-compose.yml)。
+前端会由同一份 Compose 通过 `FRONTEND_BUILD_CONTEXT` 直接构建
 
-## 快速开始（本地开发）
+### 1. 准备生产环境变量
+
+先从模板复制：
 
 ```bash
-cp .env.example .env
-python generate_key.py          # 生成 SECRET_KEY / FILE_DOWNLOAD_TOKEN_SECRET / PGSQL_PASSWORD
-# 将生成值写入 .env
+cp deploy/prod/env.example deploy/prod/.env
+```
 
+当前生产 Compose 约定使用的就是 `deploy/prod/.env`，不是仓库根目录 `.env`。
+手动执行时也建议在 `deploy/prod` 目录下运行，或者显式带上 `--env-file deploy/prod/.env`，避免出现“插值读取根目录 `.env`、而 `env_file` 读取 `deploy/prod/.env`”的混用。
+
+重点只看两类变量：
+
+1. 域名与前端运行时配置：`APP_SITE_HOST`、`API_SITE_HOST`、`API_BASE_URL`、`AUTH_BASE_URL`、`APP_BASE_URL`、`CORS_ALLOWED_ORIGINS` 等。
+2. 宿主机资源路径：主要是 `MCA_STORAGE_ROOT`。
+
+`SECRET_KEY`、`FILE_DOWNLOAD_TOKEN_SECRET`、`PGSQL_PASSWORD` 在生产 Compose 首次启动时会自动生成并持久化；如果你想固定值，再手动填写覆盖。
+
+### 2. 在 Dokploy 中创建 Compose 应用
+
+Dokploy 这一段按当前仓库配置应理解为：
+
+1. 在 Dokploy 中创建一个基于本后端仓库的 Compose 应用。
+2. Compose 文件指向 [deploy/prod/docker-compose.yml](deploy/prod/docker-compose.yml)。
+3. 将填好的 `deploy/prod/.env` 内容作为该应用的环境变量来源。
+4. 在 Dokploy 的域名 / 路由设置中，把你的前端域名和 API 域名都路由到这份 Compose 暴露出来的 Caddy HTTP 服务。
+
+README 不再假定 Dokploy UI 的固定字段名或固定表单布局，因为不同版本界面会变；但要求是明确的：公网流量先到 Dokploy / Traefik，再转到 Caddy，Caddy 在 Compose 内继续分发前后端请求。
+
+### 3. 前端推送如何触发重部署
+
+前端仓库已经提供了对应 workflow：
+[USTB-Official-Website/.github/workflows/dokploy-redeploy.yml](https://github.com/USTB-SkyCode/USTB-Official-Website/blob/main/.github/workflows/dokploy-redeploy.yml)
+
+它只在前端仓库里存在 `DOKPLOY_REDEPLOY_HOOK_URL` 这个 GitHub Secret 时才会触发。实际做法是：
+
+1. 在 Dokploy 应用里拿到 deploy webhook。
+2. 把它填到前端仓库的 `DOKPLOY_REDEPLOY_HOOK_URL` Secret。
+3. 前端仓库推送后，workflow 会 POST 这个 webhook，触发同一份 Compose 重新部署，从而重建 `frontend` 服务。
+
+### 4. 手动 Traefik 实验入口（非 Dokploy）
+
+如果你要在类似 `world-dev` 的机器上临时模拟“Traefik -> Caddy -> 前后端”的链路，不要改主 Compose，也不要把这个实验入口交给 Dokploy。请额外叠加 [deploy/prod/docker-compose.traefik-lab.yml](deploy/prod/docker-compose.traefik-lab.yml)。
+
+启动实验入口：
+
+```bash
+docker compose \
+	-f deploy/prod/docker-compose.yml \
+	-f deploy/prod/docker-compose.traefik-lab.yml \
+	--profile traefik-lab \
+	up -d caddy traefik-lab
+```
+
+停止实验入口：
+
+```bash
+docker compose \
+	-f deploy/prod/docker-compose.yml \
+	-f deploy/prod/docker-compose.traefik-lab.yml \
+	--profile traefik-lab \
+	stop traefik-lab
+```
+
+注意：
+
+1. Dokploy 仍然只应使用 [deploy/prod/docker-compose.yml](deploy/prod/docker-compose.yml)，不要额外带这个 override。
+2. `traefik-lab` 同时使用了 `profiles: ["traefik-lab"]` 和 `restart: "no"`，不会因为普通 `docker compose up` 或 Docker 守护进程重启而自启动。
+3. 默认监听宿主机 `80/443`；如果只是本机实验，可临时设置 `TRAEFIK_LAB_HTTP_PORT`、`TRAEFIK_LAB_HTTPS_PORT` 改成别的端口。
+4. 如果实验域名已经被浏览器记成 HSTS（例如 `app-dev.nand.cloud`），就不能再用默认自签证书；当前 override 已改为让 Traefik 自动申请公开证书。首次启动时给它几十秒完成 ACME 校验即可。
+5. 如需登记 ACME 联系邮箱，可在环境中额外提供 `TRAEFIK_LAB_ACME_EMAIL`；不提供也不影响这条实验链路默认不自启动。
+
+## 路径规则
+
+生产配置里有两类路径，不要混淆：
+
+1. 容器内固定路径：例如 `/data/file-data`、`/data/mca`。这些已经由 Compose 接管，你不需要再在 `.env` 里填写。
+2. 宿主机路径：例如 `MCA_STORAGE_ROOT`。这类路径需要你自己决定并创建。
+
+当前 Dokploy 生产部署里，通常只有 `MCA_STORAGE_ROOT` 需要你显式提供宿主机绝对路径。
+
+### MCA 资源怎么填
+
+- `MCA_BASE_URL` 是对外 URL 前缀，必须以 `/` 开头，例如 `/resource/mca/ustb`。
+- `MCA_STORAGE_ROOT` 是宿主机上的实际目录，例如 `/data/official/mca`。
+- Caddy 会把 `MCA_STORAGE_ROOT` 只读挂载到容器内固定路径 `/data/mca`。
+- 请求 `/resource/mca/ustb/world/region/r.0.0.mca` 时，Caddy 实际读取的是 `{MCA_STORAGE_ROOT}/world/region/r.0.0.mca`。
+
+部署前这一步需要你自己做：
+
+```bash
+sudo mkdir -p /data/official/mca
+```
+
+目录权限 `755`，文件 `644` 。
+
+没有 MCA 文件，建议先创建一个空目录并填入 `MCA_STORAGE_ROOT`，避免 Compose 挂载时报错。
+
+### 哪些路径不用填
+
+- 下载文件路径已经固定挂载到容器内 `/data/file-data`，不需要再填写 `FILE_STORAGE_ROOT`。
+- 宿主机侧的下载目录默认用 `FILE_DATA_HOST_PATH=../../file-data`。这里的 `../../` 是相对 `deploy/prod/docker-compose.yml` 所在目录计算的，也就是回到仓库根目录后使用 `file-data/`。如果你不喜欢相对路径，直接在 `deploy/prod/.env` 里把 `FILE_DATA_HOST_PATH` 改成绝对路径即可。
+- Caddy 内部的 MCA 挂载点已经固定为 `/data/mca`，不需要再填写 `MCA_STORAGE_MOUNT`。
+- `FRONTEND_BUILD_CONTEXT` 默认就是官方前端仓库；只有你要换 fork、本地目录或其他 Git 仓库时才需要改。若改成宿主机路径，则该目录需要由你自己准备，并且必须能被 Dokploy 所在主机访问。
+
+## 本地开发部署
+
+如果只是本地 Docker 联调：
+
+```bash
+cp deploy/dev/env.example .env
 docker compose -f deploy/dev/docker-compose.yml up -d --build
-```
-
----
-
-## 生产部署全流程
-
-### 架构总览
-
-```
-Client
-  └─ Dokploy Traefik (:80/:443, TLS 终止)
-     └─ Caddy (容器内 HTTP 路由)
-        ├─ @backend (/api*, /auth*, /config.js, /diagnostics*) → backend:5000
-        ├─ @mca (MCA 大文件) → forward_auth + file_server
-        ├─ @downloads (/downloads/*) → forward_auth + file_server
-        └─ 其余所有请求 → frontend:80 (同一 compose 内前端服务)
-```
-
-公网证书由 Dokploy Traefik 负责，Caddy 只在容器网络内处理 HTTP 路由和响应头。
-
-### 1. 准备环境变量
-
-```bash
-cd deploy/prod
-cp env.example .env
-```
-
-必填的最小配置项：
-
-| 变量 | 说明 | 示例 |
-|---|---|---|
-| `APP_SITE_HOST` | 前端站点公网域名（Traefik 转发时保留 Host） | `app.your-domain.com` |
-| `API_SITE_HOST` | 后端 API 公网域名（Traefik 转发时保留 Host） | `api.your-domain.com` |
-| `CORS_ALLOWED_ORIGINS` | CORS 允许来源，逗号分隔 | `https://app.your-domain.com` |
-| `OAUTH_ALLOWED_REDIRECT_HOSTS` | OAuth 回调允许的 host | `app.your-domain.com` |
-| `APP_ALLOWED_RETURN_HOSTS` | 登录成功跳转允许的 host | `app.your-domain.com` |
-| `TRUSTED_HOSTS` | 信任的 Host 头白名单 | `app.your-domain.com,api.your-domain.com` |
-| `API_BASE_URL` | 前端运行时 → 后端 API 入口 | `https://app.your-domain.com` |
-| `AUTH_BASE_URL` | 前端运行时 → 认证入口 | `https://app.your-domain.com` |
-| `APP_BASE_URL` | 前端运行时 → 应用入口 | `https://app.your-domain.com` |
-| `SKIN_API_BASE_URL` | 前端运行时 → 皮肤 API | `https://skin.ustb.world/skinapi` |
-| `MCA_BASE_URL` | MCA 资源 URL 前缀（前端运行时 + Caddy 路由） | `/resource/mca/ustb` |
-| `MCA_STORAGE_ROOT` | MCA 文件宿主机路径 | `/srv/mca` |
-| `MCA_STORAGE_MOUNT` | MCA 挂载到 Caddy 容器内的路径 | `/srv/mca` |
-| `FRONTEND_BUILD_CONTEXT` | 前端构建上下文（供同一 compose 构建 frontend 服务） | `https://github.com/USTB-SkyCode/USTB-Official-Website.git#main` |
-
-可选但建议填写：
-
-| 变量 | 说明 | 默认值 |
-|---|---|---|
-| `FRONTEND_UPSTREAM` | 前端容器上游地址 | `http://frontend:80` |
-| `BACKEND_UPSTREAM` | 后端上游地址 | `http://backend:5000` |
-| `SECRET_KEY` | 会话签名密钥；生产 compose 自动生成并持久化 | 自动生成 |
-| `FILE_DOWNLOAD_TOKEN_SECRET` | 文件下载令牌密钥；生产 compose 自动生成并持久化 | 自动生成 |
-| `PGSQL_PASSWORD` | 数据库密码；生产 compose 自动生成并持久化 | 自动生成 |
-| `STRICT_ENV` | 严格校验，缺少必填变量时启动报错 | `true`（生产自动开启） |
-| `SECURE_COOKIES` | HTTPS cookie | `true` |
-| `REDIS_URL` | Redis 连接 | `redis://redis:6379/0` |
-| `SESSION_LIFETIME` | 会话有效期（秒） | `3600` |
-
-OAuth Provider 按需填写（至少启用一种登录方式）：
-
-| 组 | 变量 |
-|---|---|
-| GitHub | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_REDIRECT_URI` |
-| MUA | `MUA_CLIENT_ID`, `MUA_CLIENT_SECRET`, `MUA_REDIRECT_URI` |
-| USTB | `USTB_CLIENT_ID`, `USTB_CLIENT_SECRET`, `USTB_BASE_URL`, `USTB_REDIRECT_URI` |
-
-完整变量说明见 [deploy/prod/env.example](deploy/prod/env.example)。
-
-#### Secret 生成
-
-生产 compose 自动生成并持久化 `SECRET_KEY`、`FILE_DOWNLOAD_TOKEN_SECRET`、`PGSQL_PASSWORD` 三项。
-
-仓库自带脚本用于手动生成固定值：
-
-```bash
-cd Official-backend
-python generate_key.py
-```
-
-自动生成的密钥写入 `runtime_secrets` 命名卷，并在后续重启时复用。删除该 volume 后会重新生成。
-
-#### 宿主机路径
-
-生产配置显式规划 `MCA_STORAGE_ROOT`。推荐使用稳定的绝对路径，例如：`/srv/ustb/mca`。
-
-- `MCA_STORAGE_ROOT` 是宿主机目录
-- `MCA_STORAGE_MOUNT` 是挂载到 Caddy 容器内的目录，通常保持 `/srv/mca`
-- `FILE_STORAGE_ROOT=/srv/file-data` 是容器内路径，对应仓库内的 `file-data/` 目录
-
-下载文件也可以改为宿主机绝对路径或 named volume。
-
-#### 路径权限
-
-至少保证两件事：
-
-- `MCA_STORAGE_ROOT` 对 Caddy 容器可读
-- `file-data/` 对 `backend` 和 `worker` 可写
-
-Linux 宿主机可先准备：
-
-```bash
-sudo mkdir -p /srv/ustb/mca
-sudo chmod 755 /srv/ustb
-sudo chmod 755 /srv/ustb/mca
-
-mkdir -p file-data
-chmod 775 file-data
-```
-
-如果 `MCA_STORAGE_ROOT` 下已有静态资源，通常目录权限 `755`、文件权限 `644` 即可。
-
-### 2. 准备前端构建上下文
-
-生产部署通过同一份 compose 直接构建 `frontend` 服务。
-
-`frontend` 服务默认直接从前端 GitHub 仓库构建：
-
-```bash
-https://github.com/USTB-SkyCode/USTB-Official-Website.git#main
-```
-
-Dokploy 环境变量里的默认写法也是这一条：
-
-```bash
-FRONTEND_BUILD_CONTEXT=https://github.com/USTB-SkyCode/USTB-Official-Website.git#main
-```
-
-如果需要，也可以把它改成宿主机本地路径或其它 Git URL；compose 只要求该上下文包含前端 `Dockerfile` 构建所需文件。
-
-### 3. Dokploy 部署单 Compose 栈
-
-前后端和系统环境通过同一份 Dokploy Compose 部署：
-1. **Name**：填入 `official-backend`
-2. **Compose Path**：填 `deploy/prod/docker-compose.yml`
-3. **Environment**：将上述填好的 `.env` 内容粘贴进去；保留默认 `FRONTEND_BUILD_CONTEXT` 即可直接从前端 GitHub 仓库构建，需要时也可以改成自己的 Git URL、本地路径或其它构建上下文。
-4. **Domains (Traefik)**：为该 Compose 分配对外域名。
-   - 域名：`app.your-domain.com` -> 容器：`official-backend-caddy`，端口：80
-   - 域名：`api.your-domain.com` -> 容器：`official-backend-caddy`，端口：80
-5. 保存即可。Dokploy Traefik 处理外网 HTTPS 证书和到 Caddy 的转发，Caddy 负责容器内路由和响应头。
-
-Dokploy 应用关联后端仓库。后端仓库触发这份 Compose 的部署时，`frontend` 服务会按 `build.context` 自动从 `FRONTEND_BUILD_CONTEXT` 指向的 GitHub 仓库拉取源码并重新构建。
-
-前端仓库的推送不会被 Dokploy 自动感知，因为 Dokploy 监听的是这份 Compose 绑定的后端仓库；前端仓库需要通过仓库内的 GitHub Action 调用同一个 Dokploy redeploy hook，触发这份 Compose 再部署一次，`frontend` 服务才会重新拉取前端最新提交并构建。
-
-`DOKPLOY_REDEPLOY_HOOK_URL` 是部署者自己的仓库 Secret。未配置该 Secret 时，前端仓库 workflow 会直接跳过，不影响与该部署无关的使用者；需要自动部署的人在自己的仓库或 fork 中填入自己的 Dokploy redeploy hook 即可。
-
-### 4. 验证
-
-```bash
-# 容器状态
-docker compose ps
-
-# 后端健康检查
-curl -sSk https://app.your-domain.com/healthz
-
-# 前端 SPA
-curl -sSk -o /dev/null -w '%{http_code}' https://app.your-domain.com/
-
-# 运行时配置
-curl -sSk https://app.your-domain.com/config.js
-
-# 安全头
-curl -sSk -D- -o /dev/null https://app.your-domain.com/ | grep -i cross-origin
-```
-
-### 5. 更新部署
-
-```bash
-cd deploy/prod
-docker compose pull        # 如果使用预构建镜像
-docker compose up -d --build --remove-orphans
-```
-
-前端源码目录、后端代码或 Caddy 配置更新后，都可以直接重跑同一条 `docker compose up -d --build --remove-orphans`；数据库和 Redis 仍然持久化在 Docker volumes 中。
-
----
-
-## 项目结构
-
-```
-app/              Flask 应用与业务代码
-deploy/common/    公共 Docker 构建入口 (Dockerfile, requirements.txt)
-deploy/dev/       开发部署入口
-deploy/prod/      生产部署入口 (docker-compose.yml, Caddyfile, env.example)
-templates/        模板文件
-tests/            测试代码
-worker.py         周期任务进程入口
-wsgi.py           Gunicorn Web 入口
 ```

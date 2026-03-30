@@ -120,12 +120,6 @@ def test_runtime_config_js_uses_startup_snapshot():
 		RUNTIME_CONFIG_APP_BASE_URL='https://app.example.test/',
 		RUNTIME_CONFIG_SKIN_API_BASE_URL='https://skin.example.test/skinapi/',
 		RUNTIME_CONFIG_MCA_BASE_URL='/resource/mca/world/',
-		RUNTIME_CONFIG_MODEL_BASE_URL='/model/',
-		RUNTIME_CONFIG_MODEL_COMPILED_BASE_URL='/model/compiled/',
-		RUNTIME_CONFIG_MODEL_ASSET_BASE_URL='/model/assets/',
-		RUNTIME_CONFIG_BASIC_BASE_URL='/basic/',
-		RUNTIME_CONFIG_BASIC_COMPILED_BASE_URL='/basic/compiled/',
-		RUNTIME_CONFIG_BASIC_ASSET_BASE_URL='/basic/assets/',
 		RUNTIME_CONFIG_SKIN_BASE_URL='/assets/skin/',
 		RUNTIME_CONFIG_DEV_BACKEND_PROXY_ENABLED='true',
 	)
@@ -144,12 +138,6 @@ def test_runtime_config_js_uses_startup_snapshot():
 		'"APP_BASE_URL": "https://app.example.test", '
 		'"SKIN_API_BASE_URL": "https://skin.example.test/skinapi", '
 		'"MCA_BASE_URL": "/resource/mca/world", '
-		'"MODEL_BASE_URL": "/model", '
-		'"MODEL_COMPILED_BASE_URL": "/model/compiled", '
-		'"MODEL_ASSET_BASE_URL": "/model/assets", '
-		'"BASIC_BASE_URL": "/basic", '
-		'"BASIC_COMPILED_BASE_URL": "/basic/compiled", '
-		'"BASIC_ASSET_BASE_URL": "/basic/assets", '
 		'"SKIN_BASE_URL": "/assets/skin", '
 		'"DEV_BACKEND_PROXY_ENABLED": true};\n'
 	)

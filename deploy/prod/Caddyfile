@@ -28,7 +28,7 @@ http://{$APP_SITE_HOST} {
 	@downloads path /downloads/*
 	@backend path /api* /auth* /config.js /skin-origin-proxy* /diagnostics*
 	@mca path {$MCA_BASE_URL}/*
-	@immutable_assets path /assets/* /model/* /basic/*
+	@immutable_assets path /assets/* /packs/* /model/* /basic/*
 	@resource_assets path /resource/*
 	@file_like_requests path_regexp file_like .+\.[A-Za-z0-9]+$
 
@@ -46,7 +46,7 @@ http://{$APP_SITE_HOST} {
 				uri /api/file-downloads/authorize
 			}
 			uri strip_prefix /downloads
-			root * /srv/file-data
+			root * /data/file-data
 			header Content-Disposition "attachment"
 			file_server
 		}
@@ -61,7 +61,7 @@ http://{$APP_SITE_HOST} {
 			}
 			route {
 				uri strip_prefix {$MCA_BASE_URL}
-				root * {$MCA_STORAGE_MOUNT}
+				root * /data/mca
 				header Cache-Control "public, max-age=604800"
 				file_server
 			}

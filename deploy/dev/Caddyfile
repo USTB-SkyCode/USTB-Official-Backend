@@ -30,7 +30,7 @@
 			uri /api/file-downloads/authorize
 		}
 		uri strip_prefix /downloads
-		root * /srv/file-data
+		root * /data/file-data
 		header Content-Disposition "attachment"
 		file_server {
 			precompressed gzip zstd

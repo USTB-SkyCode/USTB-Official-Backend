@@ -10,11 +10,20 @@ services:
     environment:
       TZ: ${APP_TIMEZONE:-Asia/Shanghai}
       GUNICORN_RELOAD: "true"
+      FLASK_HOST: 0.0.0.0
+      FLASK_PORT: 5000
+      PGSQL_HOST: postgres
+      PGSQL_PORT: 5432
+      PGSQL_DB: ustbhome
+      PGSQL_USER: postgres
+      PGSQL_PASSWORD: ${PGSQL_PASSWORD:-postgres}
+      REDIS_URL: redis://redis:6379/0
+      FILE_STORAGE_ROOT: /data/file-data
     working_dir: /app
     command: gunicorn --config gunicorn.conf.py wsgi:app
     volumes:
       - ../../:/app
-      - ../../file-data:/srv/file-data
+      - ../../file-data:/data/file-data
     ports:
       - "127.0.0.1:5000:5000"
     depends_on:
@@ -38,11 +47,18 @@ services:
       - ./.env
     environment:
       TZ: ${APP_TIMEZONE:-Asia/Shanghai}
+      PGSQL_HOST: postgres
+      PGSQL_PORT: 5432
+      PGSQL_DB: ustbhome
+      PGSQL_USER: postgres
+      PGSQL_PASSWORD: ${PGSQL_PASSWORD:-postgres}
+      REDIS_URL: redis://redis:6379/0
+      FILE_STORAGE_ROOT: /data/file-data
     working_dir: /app
     command: python worker.py
     volumes:
       - ../../:/app
-      - ../../file-data:/srv/file-data
+      - ../../file-data:/data/file-data
     depends_on:
       postgres:
         condition: service_healthy
@@ -98,7 +114,7 @@ services:
       - "443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - ../../file-data:/srv/file-data:ro
+      - ../../file-data:/data/file-data:ro
       - caddy_data:/data
       - caddy_config:/config
     extra_hosts:
