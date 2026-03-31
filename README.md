@@ -36,13 +36,28 @@ vi deploy/prod/.env
 | `CORS_ALLOWED_ORIGINS` | CORS 白名单 | `https://app.example.com` |
 | `MCA_BASE_URL` | MCA URL 前缀 | `/resource/mca/ustb` |
 | `MCA_STORAGE_ROOT` | MCA 宿主机目录 | `/data/official/mca` |
+| `FRONTEND_RESOURCEPACK_HOST_PATH` | 资源包源文件宿主机目录 | `/data/official/front-resourcepack` |
 
 `SECRET_KEY`、`FILE_DOWNLOAD_TOKEN_SECRET`、`PGSQL_PASSWORD` 首次启动自动生成，无需填写。
 
 ### 2. 准备宿主机目录
 
 ```bash
-mkdir -p /data/official/mca   # MCA，无数据时留空即可
+mkdir -p /data/official/mca                  # MCA 区域文件，无数据时留空即可
+mkdir -p /data/official/front-resourcepack   # 资源包源文件
+```
+
+将资源包源文件上传到 `front-resourcepack/` 目录，结构如下：
+
+```
+front-resourcepack/
+├── minecraft16.pack.json
+├── hybrid128.pack.json
+├── minecraft/          # 源纹理目录
+├── 05cube/
+├── 05pbr128/
+├── 05redstone/
+└── 05glasspane/
 ```
 
 ### 3. 启动
@@ -56,14 +71,14 @@ Caddy 在容器内监听 :80。在 Dokploy 中将 `APP_SITE_HOST` + `API_SITE_HO
 
 ### 4. 资源包编译（首次部署时）
 
-前端引擎需要编译后的资源包（纹理、方块数据）。源包放在 `FRONTEND_RESOURCEPACK_HOST_PATH`（默认 `/data/official/front-resourcepack`）。
+前端引擎需要编译后的资源包（纹理、方块数据）。resource-builder 容器从 `FRONTEND_RESOURCEPACK_HOST_PATH` 读取源文件（只读），编译产物写入 `frontend_packs` Docker 卷。
 
 ```bash
 docker compose --profile frontend-resource-build run --rm frontend-resource-builder
-docker compose restart frontend
+docker compose restart frontend   # 重启后 entrypoint 自动挂载编译产物
 ```
 
-编译产物写入 `frontend_packs` 卷，frontend 重启后自动挂载。源包更新时重新运行即可。
+源包更新后重新运行以上两条命令即可。
 
 ### 5. 前端自动重部署（可选）
 
