@@ -1,3 +1,7 @@
+# Prodlike Caddyfile — mirrors deploy/prod/Caddyfile exactly.
+# Kept as a separate copy so prodlike can be started independently
+# without touching the production config.
+
 (common_headers) {
 	header {
 		X-Content-Type-Options nosniff
@@ -14,22 +18,30 @@
 	}
 }
 
-{$API_SITE_HOST} {
+http://{$API_SITE_HOST} {
 	import common_headers
 	reverse_proxy {$BACKEND_UPSTREAM}
 }
 
-{$APP_SITE_HOST} {
+http://{$APP_SITE_HOST} {
 	import common_headers
 	import cross_origin_isolation_headers
 
 	@deny_config_template path /config.template.js
+	@deny_vite_dev_paths path /@vite/* /@id/* /src/* /node_modules/* /__x00__*
 	@downloads path /downloads/*
 	@backend path /api* /auth* /config.js /skin-origin-proxy* /diagnostics*
 	@mca path {$MCA_BASE_URL}/*
+	@immutable_assets path /assets/* /packs/* /model/* /basic/*
+	@resource_assets path /resource/*
+	@file_like_requests path_regexp file_like .+\.[A-Za-z0-9]+$
 
 	route {
 		handle @deny_config_template {
+			respond "Not Found" 404
+		}
+
+		handle @deny_vite_dev_paths {
 			respond "Not Found" 404
 		}
 
@@ -59,9 +71,23 @@
 			}
 		}
 
-		# Dev: all remaining requests go to Vite dev server
+		handle @immutable_assets {
+			header Cache-Control "public, max-age=31536000, immutable"
+			reverse_proxy {$FRONTEND_UPSTREAM}
+		}
+
+		handle @resource_assets {
+			header Cache-Control "public, max-age=2592000, immutable"
+			reverse_proxy {$FRONTEND_UPSTREAM}
+		}
+
+		handle @file_like_requests {
+			reverse_proxy {$FRONTEND_UPSTREAM}
+		}
+
 		handle {
-			reverse_proxy {$DEV_FRONTEND_UPSTREAM}
+			header Cache-Control "no-store"
+			reverse_proxy {$FRONTEND_UPSTREAM}
 		}
 	}
 }

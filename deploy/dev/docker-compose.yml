@@ -1,29 +1,39 @@
+x-backend-build: &backend-build
+  context: "${BACKEND_BUILD_CONTEXT:-../..}"
+  dockerfile: deploy/common/Dockerfile
+
+x-host-paths:
+  file-data-rw: &file-data-rw "${FILE_DATA_HOST_PATH:-../../file-data}:/data/file-data"
+  file-data-ro: &file-data-ro "${FILE_DATA_HOST_PATH:-../../file-data}:/data/file-data:ro"
+
+x-app-env: &app-env
+  TZ: ${APP_TIMEZONE:-Asia/Shanghai}
+  STRICT_ENV: ${STRICT_ENV:-false}
+  PGSQL_HOST: postgres
+  PGSQL_PORT: 5432
+  PGSQL_DB: ustbhome
+  PGSQL_USER: postgres
+  PGSQL_PASSWORD: ${PGSQL_PASSWORD:-postgres}
+  REDIS_URL: redis://redis:6379/0
+  FILE_STORAGE_ROOT: /data/file-data
+
 services:
   backend:
-    build:
-      context: ../..
-      dockerfile: deploy/common/Dockerfile
-    container_name: official-backend-app
+    build: *backend-build
+    container_name: official-backend-dev-app
     restart: unless-stopped
     env_file:
       - ./.env
     environment:
-      TZ: ${APP_TIMEZONE:-Asia/Shanghai}
+      <<: *app-env
       GUNICORN_RELOAD: "true"
       FLASK_HOST: 0.0.0.0
       FLASK_PORT: 5000
-      PGSQL_HOST: postgres
-      PGSQL_PORT: 5432
-      PGSQL_DB: ustbhome
-      PGSQL_USER: postgres
-      PGSQL_PASSWORD: ${PGSQL_PASSWORD:-postgres}
-      REDIS_URL: redis://redis:6379/0
-      FILE_STORAGE_ROOT: /data/file-data
     working_dir: /app
     command: gunicorn --config gunicorn.conf.py wsgi:app
     volumes:
       - ../../:/app
-      - ../../file-data:/data/file-data
+      - *file-data-rw
     ports:
       - "127.0.0.1:5000:5000"
     depends_on:
@@ -38,27 +48,18 @@ services:
       retries: 5
 
   worker:
-    build:
-      context: ../..
-      dockerfile: deploy/common/Dockerfile
-    container_name: official-backend-worker
+    build: *backend-build
+    container_name: official-backend-dev-worker
     restart: unless-stopped
     env_file:
       - ./.env
     environment:
-      TZ: ${APP_TIMEZONE:-Asia/Shanghai}
-      PGSQL_HOST: postgres
-      PGSQL_PORT: 5432
-      PGSQL_DB: ustbhome
-      PGSQL_USER: postgres
-      PGSQL_PASSWORD: ${PGSQL_PASSWORD:-postgres}
-      REDIS_URL: redis://redis:6379/0
-      FILE_STORAGE_ROOT: /data/file-data
+      <<: *app-env
     working_dir: /app
     command: python worker.py
     volumes:
       - ../../:/app
-      - ../../file-data:/data/file-data
+      - *file-data-rw
     depends_on:
       postgres:
         condition: service_healthy
@@ -67,15 +68,15 @@ services:
 
   postgres:
     image: postgres:16
-    container_name: official-backend-postgres
+    container_name: official-backend-dev-postgres
     restart: unless-stopped
     environment:
       POSTGRES_DB: ustbhome
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${PGSQL_PASSWORD:-postgres}
       TZ: ${APP_TIMEZONE:-Asia/Shanghai}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -86,12 +87,12 @@ services:
 
   redis:
     image: redis:7
-    container_name: official-backend-redis
+    container_name: official-backend-dev-redis
     restart: unless-stopped
     environment:
       TZ: ${APP_TIMEZONE:-Asia/Shanghai}
     ports:
-      - "6379:6379"
+      - "${REDIS_HOST_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -102,19 +103,23 @@ services:
 
   caddy:
     image: caddy:2
-    container_name: official-backend-caddy
+    container_name: official-backend-dev-caddy
     restart: unless-stopped
     profiles: ["https"]
-    env_file:
-      - ./.env
     environment:
       TZ: ${APP_TIMEZONE:-Asia/Shanghai}
+      APP_SITE_HOST: ${APP_SITE_HOST}
+      API_SITE_HOST: ${API_SITE_HOST}
+      MCA_BASE_URL: ${MCA_BASE_URL}
+      BACKEND_UPSTREAM: ${BACKEND_UPSTREAM:-http://backend:5000}
+      DEV_FRONTEND_UPSTREAM: ${DEV_FRONTEND_UPSTREAM:-http://host.docker.internal:5175}
     ports:
       - "80:80"
       - "443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - ../../file-data:/data/file-data:ro
+      - ${MCA_STORAGE_ROOT:-/dev/null}:/data/mca:ro
+      - *file-data-ro
       - caddy_data:/data
       - caddy_config:/config
     extra_hosts:

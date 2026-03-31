@@ -20,7 +20,6 @@ htmlcov/
 
 # Local runtime data
 file-data/
-deploy/dev/prodlike/
 deploy/prod/docker-compose.traefik-lab.yml
 
 # Editor files
@@ -31,7 +30,7 @@ deploy/prod/docker-compose.traefik-lab.yml
 **/*.md
 **/*.MD
 !/README.md
-deploy/**/*.md
+!deploy/**/*.md
 deploy/dev/old/
 
 # Logs
