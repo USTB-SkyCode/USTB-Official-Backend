@@ -37,6 +37,22 @@ services:
       dockerfile: Dockerfile
     container_name: official-frontend
     restart: unless-stopped
+    volumes:
+      - frontend_packs:/data/packs
+
+  frontend-resource-builder:
+    build:
+      context: "${FRONTEND_BUILD_CONTEXT:-https://github.com/USTB-SkyCode/USTB-Official-Website.git#main}"
+      dockerfile: Dockerfile
+      target: resource-builder
+    container_name: official-frontend-resource-builder
+    profiles: ["frontend-resource-build"]
+    restart: "no"
+    working_dir: /build
+    command: npm run build:resource
+    volumes:
+      - "${FRONTEND_RESOURCEPACK_HOST_PATH:-/data/official/front-resourcepack}:/build/resource/resourcepack:ro"
+      - frontend_packs:/build/public/packs
 
   backend:
     build: *backend-build
@@ -134,8 +150,9 @@ services:
       MCA_BASE_URL: ${MCA_BASE_URL}
       FRONTEND_UPSTREAM: ${FRONTEND_UPSTREAM:-http://frontend:80}
       BACKEND_UPSTREAM: ${BACKEND_UPSTREAM:-http://backend:5000}
-    #    For manual ingress testing, keep host ports disabled here and use
-    #    docker-compose.traefik-lab.yml with the traefik-lab profile instead.
+    #    For manual ingress testing, keep host ports disabled here.
+    #    Extra ingress compose files must always be added explicitly with -f.
+    #    Do not use docker-compose.override.yml in prod.
 #    ports:
 #      - "80:80"
 #      - "443:443"
@@ -153,5 +170,6 @@ volumes:
   runtime_secrets:
   postgres_data:
   redis_data:
+  frontend_packs:
   caddy_data:
   caddy_config:
