@@ -60,6 +60,22 @@ front-resourcepack/
 └── 05glasspane/
 ```
 
+pack.json是实际的资源包集合配置,格式示例:
+
+```jsonc
+{
+  "key": "hybrid128",                // 唯一标识，用于运行时选包
+  "label": "立方构想V4028(128px)",     // 前端 UI 显示名称
+  "description": "当前默认的 128px 混合 PBR 资源组合。",
+  "order": 1,        // 多个pack.json的序号,以最小的为网页默认材质包
+  "directory": "05pbr",              // 编译产物输出子目录（/packs/{directory}/compiled/）
+  "maxTextureSize": 128,             // 材质包分辨率（px）
+  "labPbr": true,                    // 是否启用 labPBR 法线/高光分析
+  "packs": ["05cube", "05redstone", "05glasspane", "05pbr128", "minecraft"]
+  // ↑ 源纹理目录合并顺序，右侧优先级更低（minecraft 为基线兜底）
+}
+```
+
 ### 3. 启动
 
 ```bash
