@@ -104,13 +104,13 @@ chmod 755 /data/official/mca /data/official/front-resourcepack /data/official/fi
 front-resourcepack/
 ├── minecraft16.pack.json
 ├── hybrid128.pack.json
-├── minecraft/          # 源纹理目录
+├── minecraft/          
 ├── 05cube/
 ├── 05pbr128/
 ├── 05redstone/
 └── 05glasspane/
 ```
-
+文件夹为解压后的资源包文件夹,结构为xx/assets/minecraft/blockstates,models,textures...
 pack.json 是实际的资源包集合配置，格式示例：
 
 ```jsonc
@@ -123,7 +123,7 @@ pack.json 是实际的资源包集合配置，格式示例：
   "maxTextureSize": 128,             // 材质包分辨率（px）
   "labPbr": true,                    // 是否启用 labPBR 法线/高光分析
   "packs": ["05cube", "05redstone", "05glasspane", "05pbr128", "minecraft"]
-  // ↑ 源纹理目录合并顺序，右侧优先级更低（minecraft 为基线兜底）
+  // ↑ 资源包合并顺序，右侧优先级更低（minecraft 为兜底）
 }
 ```
 
