@@ -2,6 +2,8 @@
 
 单 Docker Compose 部署后端 + 前端 + 网关 + 数据库全栈。
 
+开发链路（`deploy/dev`、`deploy/dev/prodlike`）见 [deploy/README.md](deploy/README.md)；本文只描述当前有效的 `deploy/prod` 部署合同。
+
 ## 架构
 
 ```

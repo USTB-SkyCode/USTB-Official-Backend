@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Persist production secrets for the Dokploy compose stack."""
+"""Persist runtime secrets for the production compose stack."""
 
 from __future__ import annotations
 
