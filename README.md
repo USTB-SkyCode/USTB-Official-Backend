@@ -1,4 +1,4 @@
-﻿# USTB Official Backend
+# USTB Official Backend
 
 单 Docker Compose 部署后端 + 前端 + 网关 + 数据库全栈。
 

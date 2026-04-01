@@ -1,15 +1,13 @@
 import os
 
-
 def _env_bool(name: str, default: bool = False) -> bool:
-	value = os.environ.get(name)
-	if value is None or value == '':
-		return default
-	return value.strip().lower() == 'true'
-
+    value = os.environ.get(name)
+    if value is None or value == '':
+        return default
+    return value.strip().lower() == 'true'
 
 bind = f"{os.environ.get('FLASK_HOST', '0.0.0.0')}:{os.environ.get('FLASK_PORT', '5000')}"
-workers = int(os.environ.get('GUNICORN_WORKERS', '2'))
+workers = int(os.environ.get('GUNICORN_WORKERS', '1'))  # Optimized for server memory (1 worker, 4 threads)
 threads = int(os.environ.get('GUNICORN_THREADS', '4'))
 timeout = int(os.environ.get('GUNICORN_TIMEOUT', '60'))
 graceful_timeout = int(os.environ.get('GUNICORN_GRACEFUL_TIMEOUT', '30'))
