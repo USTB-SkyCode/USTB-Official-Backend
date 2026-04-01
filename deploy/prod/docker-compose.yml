@@ -3,9 +3,9 @@ x-backend-build: &backend-build
   dockerfile: deploy/common/Dockerfile
 
 x-host-paths:
-  # ../../file-data means: from deploy/prod/ go back to repo root, then enter file-data/
-  file-data-rw: &file-data-rw "${FILE_DATA_HOST_PATH:-../../file-data}:/data/file-data"
-  file-data-ro: &file-data-ro "${FILE_DATA_HOST_PATH:-../../file-data}:/data/file-data:ro"
+  # /data/official/file-data means: dedicated data volume configured in prod
+  file-data-rw: &file-data-rw "${FILE_DATA_HOST_PATH:-/data/official/file-data}:/data/file-data"
+  file-data-ro: &file-data-ro "${FILE_DATA_HOST_PATH:-/data/official/file-data}:/data/file-data:ro"
 
 x-app-env: &app-env
   TZ: ${APP_TIMEZONE:-Asia/Shanghai}

@@ -70,12 +70,24 @@ vi deploy/prod/.env    # 完整字段说明见 env.example 注释
 
 ### 2. 准备宿主机目录
 
+部署前须手动创建以下目录，并确保运行 Docker 的用户有权访问。
+
+`/data/...` 均为示例路径,实际要换成你配置项所填写的路径
+
+| 宿主机路径 (默认) | 容器内映射 | 用途 | 备注 |
+|---|---|---|---|
+| `/data/official/mca` | `/data/mca` (Caddy) | MCA 区域存档 | 只读。存储 `r.x.y.mca` 文件。 |
+| `/data/official/front-resourcepack` | `/build/resource/resourcepack` | 材质包源文件 | 只读。用于 `frontend-resource-builder` 编译。 |
+| `/data/official/file-data` | `/data/file-data` (Backend) | 后端持久化文件 | 读写。存储用户上传、公告图片等。 |
+
 ```bash
 mkdir -p /data/official/mca                  # MCA 区域文件，无数据时留空即可
 mkdir -p /data/official/front-resourcepack   # 资源包源文件
+mkdir -p /data/official/file-data            # 后端持久化文件目录
+chmod 755 /data/official/mca /data/official/front-resourcepack /data/official/file-data
 ```
 
-将资源包源文件上传到 `front-resourcepack/` 目录，结构如下：
+将材质包源文件上传到 `front-resourcepack/` 目录，结构如下：
 
 ```
 front-resourcepack/
