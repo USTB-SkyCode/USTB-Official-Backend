@@ -52,6 +52,7 @@ vi deploy/prod/.env    # 完整字段说明见 env.example 注释
 | `MCA_BASE_URL` | MCA URL 前缀 | `/resource/mca/ustb` |
 | `MCA_STORAGE_ROOT` | MCA 宿主机目录 | `/data/official/mca` |
 | `FRONTEND_RESOURCEPACK_HOST_PATH` | 资源包源文件宿主机目录 | `/data/official/front-resourcepack` |
+| `FILE_DATA_HOST_PATH` | 后端文件下载宿主机目录 | `/data/official/file-data` |
 
 `SECRET_KEY`、`FILE_DOWNLOAD_TOKEN_SECRET`、`PGSQL_PASSWORD` 首次启动由 `secrets-init` 容器自动生成并持久化到 `runtime_secrets` 卷；如需固定值（如迁移数据库），可在首启前填写。
 
@@ -68,11 +69,21 @@ vi deploy/prod/.env    # 完整字段说明见 env.example 注释
 
 完整字段及默认值参见 [env.example](deploy/prod/env.example)。
 
+### 2.1 三个 /data 路径配置 (必须先确认)
+
+以下 3 个路径都是宿主机绝对路径；建议在 `.env` 里显式填写，不要依赖隐式默认值。
+
+| 变量名 | 推荐值 | 是否必填 | 容器内挂载点 | 作用 |
+|---|---|---|---|---|
+| `MCA_STORAGE_ROOT` | `/data/official/mca` | 是 | `/data/mca` (caddy, ro) | 提供 MCA 区域文件给 `/resource/mca/*` |
+| `FRONTEND_RESOURCEPACK_HOST_PATH` | `/data/official/front-resourcepack` | 否 (强烈建议填) | `/build/resource/resourcepack` (frontend-resource-builder, ro) | 资源包源文件输入目录 |
+| `FILE_DATA_HOST_PATH` | `/data/official/file-data` | 否 (强烈建议填) | `/data/file-data` (backend/worker rw, caddy ro) | 下载文件和后端文件目录 |
+
 ### 2. 准备宿主机目录
 
 部署前须手动创建以下目录，并确保运行 Docker 的用户有权访问。
 
-`/data/...` 均为示例路径,实际要换成你配置项所填写的路径
+`/data/...` 只是推荐值；如果你在 `.env` 中改了路径，下面命令要改成对应值。
 
 | 宿主机路径 (默认) | 容器内映射 | 用途 | 备注 |
 |---|---|---|---|
