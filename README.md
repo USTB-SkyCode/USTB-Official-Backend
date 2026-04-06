@@ -164,6 +164,8 @@ Caddy 默认以 `http://` 监听，不持有 TLS 证书。外部 HTTPS 接入有
 
 Caddy 容器 :80 不暴露到宿主机，由平台自行路由到 Caddy 服务。Compose 无需额外操作，平台侧将 `APP_SITE_HOST` + `API_SITE_HOST` 指向 Caddy 容器即可。
 
+如果你使用 Dokploy 的 Docker Compose 域名功能，请保留 `caddy` 服务上的项目默认网络。Dokploy 会为被选中的服务额外挂载 `dokploy-network` 供 Traefik 访问；若 `caddy` 只剩该代理网络，则会失去对 `frontend` / `backend` 的服务发现能力，并对站点根路径与 `/config.js` 同时返回 `502 Bad Gateway`。
+
 ### B. Caddy ACME（单机直接签发）
 
 适用于单机部署，Caddy 自动向 Let's Encrypt 申请并续期证书。

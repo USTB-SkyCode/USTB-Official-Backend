@@ -162,6 +162,10 @@ services:
       - *file-data-ro
       - caddy_data:/data
       - caddy_config:/config
+    # Keep the project default network so Caddy can still resolve frontend/backend
+    # when platforms like Dokploy attach an extra proxy network to this service.
+    networks:
+      - default
     depends_on:
       - backend
       - frontend
