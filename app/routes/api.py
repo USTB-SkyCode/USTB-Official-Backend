@@ -205,7 +205,17 @@ def get_current_user_skin():
 @api_bp.route('/session', methods=['DELETE'])
 def logout():
 	session.clear()
-	return jsonify({"data": {"success": True, "message": "Logged out"}, "error": None})
+	
+	token = generate_csrf()
+	resp = jsonify({"data": {"success": True, "message": "Logged out"}, "error": None})
+	resp.set_cookie(
+		'XSRF-TOKEN',
+		token,
+		secure=current_app.config.get('SESSION_COOKIE_SECURE', True),
+		samesite=current_app.config.get('SESSION_COOKIE_SAMESITE', 'Lax'),
+		httponly=False,
+	)
+	return resp
 
 
 # --- 添加 CSRF token endpoint ---

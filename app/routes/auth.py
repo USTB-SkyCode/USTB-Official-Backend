@@ -13,6 +13,7 @@ from app.models.session import UserSession
 from app.utils.same_origin_assets import rewrite_avatar_url_for_same_origin
 from app.utils.auth import PKCEGenerator, RedirectURIValidator
 from app.debugger import debug_oauth_login, debug_oauth_callback, session_debugger
+from flask_wtf.csrf import generate_csrf
 
 auth_bp = Blueprint('auth', __name__,url_prefix='/auth')
 logger = logging.getLogger(__name__)
@@ -182,7 +183,7 @@ def dev_login():
     provider = str(payload.get('provider') or current_app.config.get('DEV_AUTH_DEFAULT_PROVIDER', 'dev')).strip()
     create_secure_session(user, provider)
 
-    return jsonify({
+    resp = jsonify({
         'data': {
             'message': 'Dev login successful',
             'user': {
@@ -195,6 +196,15 @@ def dev_login():
         },
         'error': None,
     })
+    token = generate_csrf()
+    resp.set_cookie(
+        'XSRF-TOKEN',
+        token,
+        secure=current_app.config.get('SESSION_COOKIE_SECURE', True),
+        samesite=current_app.config.get('SESSION_COOKIE_SAMESITE', 'Lax'),
+        httponly=False,
+    )
+    return resp
 
 
 @debug_oauth_login
@@ -385,7 +395,17 @@ def oauth2_callback(provider):
 
         return_to = session.pop('oauth_return_to', None) or current_app.config.get('DEFAULT_LOGIN_SUCCESS_URL', '/home')
         create_secure_session(safe_user_info, provider, access_token, refresh_token)
-        return redirect(return_to)
+        
+        resp = redirect(return_to)
+        token = generate_csrf()
+        resp.set_cookie(
+            'XSRF-TOKEN',
+            token,
+            secure=current_app.config.get('SESSION_COOKIE_SECURE', True),
+            samesite=current_app.config.get('SESSION_COOKIE_SAMESITE', 'Lax'),
+            httponly=False,
+        )
+        return resp
     except requests.exceptions.RequestException as e:
         logger.warning("OAuth callback request failed for %s: %s", provider, e)
         return jsonify({'error': 'OAuth callback request failed'}), 500

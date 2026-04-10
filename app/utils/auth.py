@@ -148,6 +148,7 @@ class PKCEGenerator:
         """根据 code_verifier 生成 code_challenge"""
         digest = hashlib.sha256(verifier.encode('utf-8')).digest()
         return base64.urlsafe_b64encode(digest).decode('utf-8').rstrip('=')
+from flask_wtf.csrf import generate_csrf
 
 class SessionRefreshManager:
     """会话刷新管理器 - 处理 token 刷新和用户信息更新"""
@@ -359,15 +360,38 @@ def require_login_and_refresh(redirect_on_fail=True):
                     ok = SessionRefreshManager.perform_session_refresh(session)
                     if not ok:
                         session.clear()
+                        token = generate_csrf()
                         if redirect_on_fail:
-                            return redirect(url_for('main.index'))
-                        return jsonify({"data": None, "error": "Session refresh failed"}), 401
+                            resp = redirect(url_for('main.index'))
+                        else:
+                            resp = jsonify({"data": None, "error": "Session refresh failed"}), 401
+                        # 处理 jsonify 结构为元组的场景
+                        resp_obj = resp[0] if isinstance(resp, tuple) else resp
+                        resp_obj.set_cookie(
+                            'XSRF-TOKEN',
+                            token,
+                            secure=current_app.config.get('SESSION_COOKIE_SECURE', True),
+                            samesite=current_app.config.get('SESSION_COOKIE_SAMESITE', 'Lax'),
+                            httponly=False,
+                        )
+                        return resp
             except Exception:
                 current_app.logger.exception('Session refresh error')
                 session.clear()
+                token = generate_csrf()
                 if redirect_on_fail:
-                    return redirect(url_for('main.index'))
-                return jsonify({"data": None, "error": "Session refresh error"}), 401
+                    resp = redirect(url_for('main.index'))
+                else:
+                    resp = jsonify({"data": None, "error": "Session refresh error"}), 401
+                resp_obj = resp[0] if isinstance(resp, tuple) else resp
+                resp_obj.set_cookie(
+                    'XSRF-TOKEN',
+                    token,
+                    secure=current_app.config.get('SESSION_COOKIE_SECURE', True),
+                    samesite=current_app.config.get('SESSION_COOKIE_SAMESITE', 'Lax'),
+                    httponly=False,
+                )
+                return resp
 
             return f(*args, **kwargs)
         return wrapped
@@ -412,11 +436,29 @@ def verify_api_session():
             ok = SessionRefreshManager.perform_session_refresh(session)
             if not ok:
                 session.clear()
-                return jsonify({"data": None, "error": "Session refresh failed"}), 401
+                token = generate_csrf()
+                resp = jsonify({"data": None, "error": "Session refresh failed"})
+                resp.set_cookie(
+                    'XSRF-TOKEN',
+                    token,
+                    secure=current_app.config.get('SESSION_COOKIE_SECURE', True),
+                    samesite=current_app.config.get('SESSION_COOKIE_SAMESITE', 'Lax'),
+                    httponly=False,
+                )
+                return resp, 401
     except Exception:
         current_app.logger.exception('Session refresh error')
         session.clear()
-        return jsonify({"data": None, "error": "Session refresh error"}), 401
+        token = generate_csrf()
+        resp = jsonify({"data": None, "error": "Session refresh error"})
+        resp.set_cookie(
+            'XSRF-TOKEN',
+            token,
+            secure=current_app.config.get('SESSION_COOKIE_SECURE', True),
+            samesite=current_app.config.get('SESSION_COOKIE_SAMESITE', 'Lax'),
+            httponly=False,
+        )
+        return resp, 401
 
     return None
 

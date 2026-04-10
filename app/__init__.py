@@ -8,6 +8,8 @@ from flask import Flask, session
 from flask_session import Session
 from flask_cors import CORS
 from flask_wtf import CSRFProtect
+from flask_wtf.csrf import CSRFError
+from flask import jsonify
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 # 本地模块
@@ -68,6 +70,10 @@ def create_app():
     app.register_blueprint(auth_bp)
     app.register_blueprint(main_bp)
     app.register_blueprint(api_bp)
+
+    @app.errorhandler(CSRFError)
+    def handle_csrf_error(e):
+        return jsonify({"data": None, "error": e.description or "CSRF token missing or incorrect."}), 400
 
     session_debugger.init_app(app)
     
