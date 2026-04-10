@@ -17,12 +17,18 @@ from app.api.Schema import (
 	McServerUpdateSchema,
 	RssFeedEntryQuerySchema,
 	RssFeedListQuerySchema,
+	SceneCameraPresetUpdateSchema,
 	UserSchema,
 )
 from flask_wtf.csrf import generate_csrf
 
 from app.services.ServerDataService import MCLocalStorage, LocalStorageError
 from app.services.ServerDataService import normalize_status_payload
+from app.services.SceneCameraPreset import (
+	SCENE_CAMERA_PRESET_KEYS,
+	SceneCameraPresetStorage,
+	serialize_scene_camera_preset_row,
+)
 from app.services.Feed import FeedServiceError, FeedSyncConflictError, RssFeedService
 from app.services.FileCatalog import FileCatalogAuthorizationError, FileCatalogError, FileCatalogService
 from app.services.JobStatus import JobStatusError, JobStatusService
@@ -41,6 +47,7 @@ mc_server_create_schema = McServerCreateSchema()
 mc_server_update_schema = McServerUpdateSchema()
 mc_server_sort_schema = McServerSortSchema()
 mc_server_status_query_schema = McServerStatusQuerySchema()
+scene_camera_preset_update_schema = SceneCameraPresetUpdateSchema()
 rss_feed_list_query_schema = RssFeedListQuerySchema()
 rss_feed_entry_query_schema = RssFeedEntryQuerySchema()
 file_list_query_schema = FileListQuerySchema()
@@ -354,6 +361,74 @@ def sort_mc_servers():
 	except Exception:
 		_log_unexpected_error('Unexpected error while sorting MC servers')
 		return jsonify({"data": None, "error": '服务器排序失败'}), 500
+	finally:
+		if storage:
+			storage.close()
+
+
+@api_bp.route('/scene-camera-presets', methods=['GET'])
+@require_api_permission(1)
+def get_scene_camera_presets():
+	storage = None
+	try:
+		storage = SceneCameraPresetStorage()
+		rows = storage.query_overrides()
+		return jsonify({
+			"data": [serialize_scene_camera_preset_row(row) for row in rows],
+			"error": None,
+		})
+	except LocalStorageError as e:
+		_log_storage_error('Failed to query scene camera presets', e)
+		return jsonify({"data": None, "error": '机位预设读取失败'}), 500
+	finally:
+		if storage:
+			storage.close()
+
+
+@api_bp.route('/scene-camera-presets/<string:preset_key>', methods=['PUT'])
+@require_api_permission(1)
+def upsert_scene_camera_preset(preset_key):
+	storage = None
+	try:
+		payload = request.get_json(silent=True)
+		if payload is None:
+			return jsonify({"data": None, "error": '请求体必须为 JSON'}), 400
+
+		data = scene_camera_preset_update_schema.load({**payload, 'presetKey': preset_key})
+		storage = SceneCameraPresetStorage()
+		row = storage.upsert_override(
+			preset_key=data['preset_key'],
+			position=data['position'],
+			look_target=data['look_target'],
+			perspective_mode=data.get('perspective_mode'),
+		)
+		return jsonify({"data": serialize_scene_camera_preset_row(row), "error": None})
+	except ValidationError as e:
+		return jsonify({"data": None, "error": e.messages}), 400
+	except LocalStorageError as e:
+		_log_storage_error('Failed to upsert scene camera preset', e)
+		return jsonify({"data": None, "error": '机位预设写入失败'}), 500
+	finally:
+		if storage:
+			storage.close()
+
+
+@api_bp.route('/scene-camera-presets/<string:preset_key>', methods=['DELETE'])
+@require_api_permission(1)
+def delete_scene_camera_preset(preset_key):
+	storage = None
+	try:
+		if preset_key not in SCENE_CAMERA_PRESET_KEYS:
+			return jsonify({"data": None, "error": '未知机位预设 key'}), 400
+
+		storage = SceneCameraPresetStorage()
+		deleted = storage.delete_override(preset_key)
+		if not deleted:
+			return jsonify({"data": None, "error": '机位预设覆盖不存在'}), 404
+		return jsonify({"data": {"presetKey": preset_key, "deleted": True}, "error": None})
+	except LocalStorageError as e:
+		_log_storage_error('Failed to delete scene camera preset', e)
+		return jsonify({"data": None, "error": '机位预设重置失败'}), 500
 	finally:
 		if storage:
 			storage.close()

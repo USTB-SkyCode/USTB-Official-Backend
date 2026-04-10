@@ -4,6 +4,7 @@ import requests
 from flask import Blueprint, Response, current_app, jsonify, request, session
 
 from app.utils.auth import require_login_and_refresh
+from app.services.SceneCameraPreset import load_scene_camera_preset_override_map
 from app.utils.same_origin_assets import is_allowed_external_asset_url
 
 main_bp = Blueprint('main', __name__)
@@ -37,10 +38,8 @@ def _build_runtime_app_config(config):
 
 
 def prepare_runtime_app_config(app):
-	"""Freeze the frontend bootstrap config at app startup."""
-	payload = _build_runtime_app_config(app.config)
-	app.config['RUNTIME_APP_CONFIG'] = payload
-	app.config['RUNTIME_APP_CONFIG_JS_BODY'] = 'window.APP_CONFIG = ' + json.dumps(payload, ensure_ascii=True) + ';\n'
+	"""Freeze the static portion of frontend bootstrap config at app startup."""
+	app.config['RUNTIME_APP_CONFIG'] = _build_runtime_app_config(app.config)
 
 
 @main_bp.route('/healthz', methods=['GET'])
@@ -50,10 +49,12 @@ def healthz():
 
 @main_bp.route('/config.js', methods=['GET'])
 def runtime_config_js():
-	body = current_app.config.get('RUNTIME_APP_CONFIG_JS_BODY')
-	if not body:
-		prepare_runtime_app_config(current_app)
-		body = current_app.config['RUNTIME_APP_CONFIG_JS_BODY']
+	base_payload = current_app.config.get('RUNTIME_APP_CONFIG') or _build_runtime_app_config(current_app.config)
+	payload = {
+		**base_payload,
+		'SCENE_CAMERA_PRESET_OVERRIDES': load_scene_camera_preset_override_map(),
+	}
+	body = 'window.APP_CONFIG = ' + json.dumps(payload, ensure_ascii=True) + ';\n'
 	response = Response(body, mimetype='application/javascript')
 	response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
 	response.headers['Pragma'] = 'no-cache'

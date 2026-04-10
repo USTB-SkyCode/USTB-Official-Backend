@@ -1,8 +1,14 @@
 """Request validation schemas for API payloads and query parameters."""
 
 import html
+import math
 
 from marshmallow import Schema, ValidationError, fields, pre_load, validates_schema, validate
+
+from app.services.SceneCameraPreset import (
+	SCENE_CAMERA_PERSPECTIVE_MODES,
+	SCENE_CAMERA_PRESET_KEYS,
+)
 
 
 def _normalize_string(value):
@@ -21,6 +27,13 @@ def _validate_server_address(value):
 		raise ValidationError('服务器地址不能包含空白字符')
 	if len(value) > 255:
 		raise ValidationError('服务器地址长度不能超过 255')
+
+
+def _validate_finite_number(value):
+	if value is None:
+		return
+	if not math.isfinite(value):
+		raise ValidationError('机位坐标必须为有限数字')
 
 
 class McServerCreateSchema(Schema):
@@ -78,6 +91,40 @@ class McServerSortSchema(Schema):
 
 class McServerStatusQuerySchema(Schema):
 	include_icon = fields.Bool(load_default=True)
+
+
+class SceneCameraPresetUpdateSchema(Schema):
+	preset_key = fields.Str(
+		required=True,
+		data_key='presetKey',
+		validate=validate.OneOf(SCENE_CAMERA_PRESET_KEYS),
+	)
+	position = fields.List(
+		fields.Float(allow_nan=False, validate=_validate_finite_number),
+		required=True,
+		validate=validate.Length(equal=3),
+	)
+	look_target = fields.List(
+		fields.Float(allow_nan=False, validate=_validate_finite_number),
+		required=True,
+		data_key='lookTarget',
+		validate=validate.Length(equal=3),
+	)
+	perspective_mode = fields.Str(
+		required=False,
+		allow_none=True,
+		data_key='perspectiveMode',
+		validate=validate.OneOf(SCENE_CAMERA_PERSPECTIVE_MODES),
+	)
+
+	@pre_load
+	def normalize_payload(self, data, **kwargs):
+		payload = dict(data or {})
+		if 'presetKey' in payload:
+			payload['presetKey'] = _normalize_string(payload.get('presetKey'))
+		if 'perspectiveMode' in payload:
+			payload['perspectiveMode'] = _normalize_string(payload.get('perspectiveMode'))
+		return payload
 
 
 class RssFeedListQuerySchema(Schema):
