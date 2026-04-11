@@ -1,74 +1,78 @@
 # Deploy Layout
 
-`deploy/` 只描述当前仍然有效的三条后端链路：`dev`、`dev/prodlike`、`prod`。
+`deploy/` 只描述当前仍然有效的两类合同：
+
+- `dev`：唯一有效的后端开发链路
+- `prod`：生产部署合同
+
+如果你是在做日常后端开发，默认只需要读 `deploy/dev`；只有上线或生产排障时才需要进入 `deploy/prod`。
 
 ```
 deploy/
-├── common/          # dev / prodlike / prod 共用的镜像构建材料
-├── dev/             # 日常后端开发：源码挂载 + 热重载 + 可选本地 HTTPS
+├── common/          # dev / prod 共用镜像构建材料
+├── dev/             # 唯一后端开发链路：源码挂载 + Gunicorn 热重载 + 可选 HTTPS 入口
 │   ├── docker-compose.yml
 │   ├── Caddyfile
-│   ├── env.example
-│   └── prodlike/    # 本地生产形态验证：拓扑对齐 prod
-│       ├── docker-compose.yml
-│       ├── Caddyfile
-│       └── env.example
-└── prod/            # 生产部署合同：面向真实部署
+│   └── env.example
+└── prod/            # 生产部署合同
     ├── docker-compose.yml
     ├── Caddyfile
     ├── env.example
     └── scripts/
 ```
 
-## 当前定义
+## dev
 
-### dev
+`deploy/dev/` 是当前唯一有效的后端开发入口。
 
-`deploy/dev/` 是日常后端开发入口，目标是让 Python 源码改动立即生效。
+它的目标很明确：
 
-- 本地仓库源码挂载到容器
-- `backend` 使用 `GUNICORN_RELOAD=true`
-- `postgres` / `redis` 暴露宿主机端口，便于调试
-- `caddy` 只在 `profiles: ["https"]` 下启动，用于把本地 HTTPS 域名转到本机 Vite 和容器内后端
-- 不要求 `/srv/ustb`，开发路径通过本地仓库和 `.env` 决定
+- 本机 `Official-backend` 通过 Mutagen 单向同步到 `/srv/ustb/dev/Official-backend`
+- 容器直接挂载这份远端工作树到 `/app`
+- `backend` 在容器内用 `GUNICORN_RELOAD=true` 完成 Python 热重载
+- `postgres` / `redis` / `backend` / `worker` 作为常驻开发服务固定存在
+- 只有在需要和本机前端做同域 HTTPS 联调时，才额外启用 `caddy` 的 `https` profile
 
-启动：
+关键约束：
+
+- `backend` 与 `worker` 都读取 `deploy/dev/.env`
+- `deploy/dev/.env` 被 Mutagen 显式忽略，不会从本机源码目录自动同步到远端
+- 当前标准远端工作树是 `/srv/ustb/dev/Official-backend`
+- `backend` 通过 `../../:/app` 挂载直接读取这份由 Mutagen 同步到远端的工作树
+- `postgres` / `redis` 默认暴露宿主机端口，便于调试和直连
+- `worker` 不会自动热重载，改动后仍需手动重启
+- 如果你改了远端根路径，必须同时保持 Mutagen 远端根目录与 `deploy/dev` 的相对挂载关系一致
+
+启动顺序：
+
+1. 先在本机确保 Mutagen 同步已经就绪。
+2. 再在远端执行：
 
 ```bash
-cd deploy/dev
+cd /srv/ustb/dev/Official-backend/deploy/dev
 cp env.example .env
-docker compose up -d
+docker compose up -d --build
 ```
 
 如需同域 HTTPS 联调：
 
 ```bash
-docker compose --profile https up -d
+cd /srv/ustb/dev/Official-backend/deploy/dev
+docker compose --profile https up -d caddy
 ```
 
-### dev/prodlike
+启用这个 profile 前，应先在 `deploy/dev/.env` 中提供可访问的 `APP_SITE_HOST`、`API_SITE_HOST`、真实可达的 `DEV_FRONTEND_UPSTREAM`，以及真实存在的 `MCA_STORAGE_ROOT`。当前 dev 机器使用的是 `/srv/ustb/dev/mca`；如果这里留空，Caddy 将无法提供 MCA 文件。
 
-`deploy/dev/prodlike/` 是本地生产形态验证入口，不是历史上的前端原子发布容器。
+与前端本地同域联调时，还要配合前端仓库 `world/`：
 
-- 服务拓扑对齐 `prod`
-- 包含 `secrets-init`、`frontend`、`frontend-resource-builder`、`backend`、`worker`、`postgres`、`redis`、`caddy`
-- 使用自己的 local volumes，不与任何 `prod_*` 卷共享
-- 前端来自容器和 `frontend_packs` volume，不再是 `front-static/live`
-- 用途是验证部署合同、资源包编译和 Caddy 路由，不承担日常前端开发
+- 首次初始化执行 `npm run setup:local-app`
+- 日常启动执行 `npm run app-dev`
+- 前端运行时 `APP_BASE_URL`、`API_BASE_URL`、`AUTH_BASE_URL` 保持同一个同域 HTTPS 开发入口
+- 前端 `.env.local` 中 `LOCAL_APP_DEV_PROXY_REMOTE_ORIGIN` 使用本机 SSH tunnel 入口
+- 前端 `.env.local` 中 `LOCAL_APP_DEV_PROXY_BACKEND_HOST_HEADER` / `LOCAL_APP_DEV_PROXY_BACKEND_SERVERNAME` 保持浏览器主入口对应的域名
+- 远端直连调试入口只保留给排障，不作为浏览器运行时默认入口
 
-启动：
-
-```bash
-cd deploy/dev/prodlike
-cp ../../prod/env.example .env
-docker compose up -d
-docker compose --profile frontend-resource-build run --rm frontend-resource-builder
-docker compose restart frontend
-```
-
-`prodlike/env.example` 只补充 `prodlike` 自己的说明；真正完整字段以 `prod/env.example` 为准。
-
-### prod
+## prod
 
 `deploy/prod/` 是生产部署合同。
 
@@ -83,10 +87,10 @@ docker compose restart frontend
 
 下面这些词如果在旧笔记、旧截图或旧聊天里出现，都按历史遗留处理，不再视为当前事实：
 
+- `deploy/dev/prodlike`
 - `front-static/live`
 - `publish_front_release.sh`
 - `Official-front`
-- `prodlike` 与 `prod_*` 卷共享
 - `/srv/ustb` 作为开发链路的必需根路径
 - `prod` 文档里的 `traefik-lab`
 

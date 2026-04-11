@@ -31,7 +31,5 @@ deploy/prod/docker-compose.traefik-lab.yml
 **/*.MD
 !/README.md
 deploy/**/*.md
-deploy/dev/old/
-
 # Logs
 *.log

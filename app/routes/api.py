@@ -716,6 +716,9 @@ def authorize_file_download():
 
 @api_bp.route('/mca-downloads/authorize', methods=['GET'])
 def authorize_mca_download():
+	forwarded_uri = ''
+	logged_in = False
+	permission = 0
 	try:
 		logged_in, permission, _ = _get_file_access_levels()
 		forwarded_uri = request.headers.get('X-Forwarded-Uri', '').strip()
@@ -732,6 +735,16 @@ def authorize_mca_download():
 		)
 		return jsonify({"data": result, "error": None})
 	except McaDownloadAuthorizationError as e:
+		current_app.logger.warning(
+			'MCA authorize denied: status=%s uri=%s referer=%s remote_addr=%s logged_in=%s permission=%s ua=%s',
+			e.status_code,
+			forwarded_uri or None,
+			request.headers.get('Referer', '').strip() or None,
+			(request.headers.get('X-Forwarded-For', '').split(',')[0].strip() or request.remote_addr or '').strip() or None,
+			logged_in,
+			permission,
+			request.headers.get('User-Agent', '').strip() or None,
+		)
 		return jsonify({"data": None, "error": str(e)}), e.status_code
 
 

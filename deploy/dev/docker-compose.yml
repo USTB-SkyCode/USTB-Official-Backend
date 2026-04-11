@@ -2,6 +2,9 @@ x-backend-build: &backend-build
   context: "${BACKEND_BUILD_CONTEXT:-../..}"
   dockerfile: deploy/common/Dockerfile
 
+# 唯一后端开发链路：挂载当前仓库源码到 /app，
+# backend 通过 GUNICORN_RELOAD=true 在容器内完成热重载。
+
 x-host-paths:
   file-data-rw: &file-data-rw "${FILE_DATA_HOST_PATH:-../../file-data}:/data/file-data"
   file-data-ro: &file-data-ro "${FILE_DATA_HOST_PATH:-../../file-data}:/data/file-data:ro"
@@ -106,6 +109,7 @@ services:
     container_name: official-backend-dev-caddy
     restart: unless-stopped
     profiles: ["https"]
+    # 仅在需要同域 HTTPS 联调时启用；默认后端开发不依赖该服务。
     environment:
       TZ: ${APP_TIMEZONE:-Asia/Shanghai}
       APP_SITE_HOST: ${APP_SITE_HOST}

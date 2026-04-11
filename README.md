@@ -1,8 +1,14 @@
 # USTB Official Backend
 
-单 Docker Compose 部署后端 + 前端 + 网关 + 数据库全栈。
+Flask backend、worker 与整站部署合同仓库。前端源码位于独立仓库 `USTB-Official-Website`，而本仓库负责 API、认证、下载鉴权、运行时配置以及 `deploy/dev` / `deploy/prod` 两条部署链路。
 
-开发链路（`deploy/dev`、`deploy/dev/prodlike`）见 [deploy/README.md](deploy/README.md)；本文只描述当前有效的 `deploy/prod` 部署合同。
+## 文档入口
+
+- [deploy/README.md](deploy/README.md)：`deploy/dev` 与 `deploy/prod` 的总体结构和边界。
+- [deploy/dev/env.example](deploy/dev/env.example)：唯一有效后端开发链路的环境模板。
+- [deploy/prod/env.example](deploy/prod/env.example)：生产部署环境模板。
+
+后端开发链路只保留 `deploy/dev`；生产部署合同见 `deploy/prod`。
 
 ## 架构
 
@@ -44,7 +50,7 @@ vi deploy/prod/.env    # 完整字段说明见 env.example 注释
 | `API_BASE_URL` | 前端 API 地址 | `https://app.example.com` |
 | `AUTH_BASE_URL` | 前端 Auth 地址 | `https://app.example.com` |
 | `APP_BASE_URL` | 前端站点地址 | `https://app.example.com` |
-| `SKIN_API_BASE_URL` | 皮肤服务 API | `https://skin.ustb.world/skinapi` |
+| `SKIN_API_BASE_URL` | 皮肤服务 API | `https://skin.example.test/skinapi` |
 | `CORS_ALLOWED_ORIGINS` | CORS 白名单 (逗号分隔) | `https://app.example.com` |
 | `OAUTH_ALLOWED_REDIRECT_HOSTS` | OAuth 回调允许 host | `app.example.com` |
 | `APP_ALLOWED_RETURN_HOSTS` | 登录跳转允许 host | `app.example.com` |
@@ -217,7 +223,51 @@ docker exec official-backend-postgres pg_dump -U postgres ustbhome > backup.sql
 
 ## 本地开发
 
-```bash
-cp deploy/dev/env.example .env
-docker compose -f deploy/dev/docker-compose.yml up -d --build
+当前标准开发链路是：本机 `Official-backend` 工作树通过 Mutagen 同步到开发服务器 `/srv/ustb/dev/Official-backend`，然后在远端 `deploy/dev` 启动 compose。也就是说，日常改 Python 代码时，不是本地直接起一个 Flask 进程，而是改本地源码、同步到远端工作树，再由容器内 `GUNICORN_RELOAD=true` 感知变更。
+
+推荐顺序：
+
+1. 在本机确保 Mutagen 会话 `official-backend-dev` 已经把 `Official-backend` 同步到远端工作树。
+2. 在远端 `deploy/dev` 准备 `.env` 并启动基础 dev 栈。
+3. 如需和本机前端做同域 HTTPS 联调，再额外启动 `https` profile 的 `caddy`。
+
+```powershell
+cd D:\vueCode\OfficalWorld
+.\world\scripts\privacy\remote\ensure_backend_mutagen_sync.ps1 -Action ensure
 ```
+
+```bash
+cd /srv/ustb/dev/Official-backend/deploy/dev
+cp env.example .env
+docker compose up -d --build
+```
+
+如需前端同域 HTTPS 联调：
+
+```bash
+cd /srv/ustb/dev/Official-backend/deploy/dev
+docker compose --profile https up -d caddy
+```
+
+然后在前端仓库 `world/` 中执行：
+
+```powershell
+cd D:\vueCode\OfficalWorld\world
+npm run app-dev
+```
+
+联调时的关键约定：
+
+- 页面入口 `APP_BASE_URL`、`API_BASE_URL`、`AUTH_BASE_URL` 保持同一个同域 HTTPS 开发入口
+- 前端 `.env.local` 中 `LOCAL_APP_DEV_PROXY_REMOTE_ORIGIN` 使用本机 SSH tunnel 入口
+- 前端 `.env.local` 中 `LOCAL_APP_DEV_PROXY_BACKEND_HOST_HEADER` / `LOCAL_APP_DEV_PROXY_BACKEND_SERVERNAME` 保持浏览器主入口对应的域名
+- 远端直连调试入口只保留给排障，不作为日常浏览器入口
+
+对这条链路，需要记住：
+
+- Python 热重载依赖 `Mutagen -> /srv/ustb/dev/Official-backend -> ../../:/app -> GUNICORN_RELOAD=true`
+- `worker` 不会自动热重载，改动后仍需手动 `docker compose restart worker`
+- `deploy/dev/.env` 被 Mutagen 显式忽略，远端 `.env` 需要单独维护，不会跟随源码热同步
+- 当前 dev 的 MCA 宿主机目录是 `/srv/ustb/dev/mca`；启用 `https` profile 前必须保证 `MCA_STORAGE_ROOT` 指向真实目录
+- 生产和远端直连环境里的 `/config.js` 由后端返回；本机 `app-dev` 接管时，前端 Vite 会从 `world/.env` 生成同形态的 `window.APP_CONFIG`
+- `npm run app-dev` 会同时启动本机 Vite、本地 HTTPS 代理和后端 SSH tunnel
