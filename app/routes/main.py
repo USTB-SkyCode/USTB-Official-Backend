@@ -10,6 +10,10 @@ from app.utils.same_origin_assets import is_allowed_external_asset_url
 main_bp = Blueprint('main', __name__)
 
 
+class AssetProxyResponseTooLarge(Exception):
+	"""Raised when an upstream asset response exceeds the configured byte limit."""
+
+
 def _strip_trailing_slash(value):
 	if not isinstance(value, str):
 		return ''
@@ -184,20 +188,83 @@ def cross_origin_isolation_diagnostics_page():
 
 def _copy_proxy_response(upstream_response):
 	"""Copy only safe response headers from the upstream asset response."""
+	content_length_header = upstream_response.headers.get('Content-Length')
+	try:
+		body = _read_proxy_response_body(upstream_response)
+	finally:
+		upstream_response.close()
+
 	headers = {}
-	for header_name in ('Content-Type', 'Content-Length', 'Cache-Control', 'ETag', 'Last-Modified'):
+	for header_name in ('Content-Type', 'Cache-Control', 'ETag', 'Last-Modified'):
 		header_value = upstream_response.headers.get(header_name)
 		if header_value:
 			headers[header_name] = header_value
+
+	if request.method == 'HEAD':
+		if content_length_header:
+			headers['Content-Length'] = content_length_header
+	else:
+		headers['Content-Length'] = str(len(body))
 
 	if 'Cache-Control' not in headers:
 		headers['Cache-Control'] = 'private, max-age=300'
 
 	return Response(
-		upstream_response.content if request.method != 'HEAD' else b'',
+		body if request.method != 'HEAD' else b'',
 		status=upstream_response.status_code,
 		headers=headers,
 	)
+
+
+def _read_proxy_response_body(upstream_response):
+	if request.method == 'HEAD':
+		return b''
+
+	max_bytes = max(1024, int(current_app.config.get('ASSET_PROXY_MAX_BYTES', 8 * 1024 * 1024)))
+	content_length_header = (upstream_response.headers.get('Content-Length') or '').strip()
+	if content_length_header:
+		try:
+			if int(content_length_header) > max_bytes:
+				raise AssetProxyResponseTooLarge(f'Asset proxy response exceeds {max_bytes} bytes')
+		except ValueError:
+			pass
+
+	chunks = []
+	total_bytes = 0
+	for chunk in upstream_response.iter_content(chunk_size=64 * 1024):
+		if not chunk:
+			continue
+		total_bytes += len(chunk)
+		if total_bytes > max_bytes:
+			raise AssetProxyResponseTooLarge(f'Asset proxy response exceeds {max_bytes} bytes')
+		chunks.append(chunk)
+
+	return b''.join(chunks)
+
+
+def _request_asset_proxy_upstream(target_url, headers):
+	return requests.request(
+		request.method,
+		target_url,
+		headers=headers,
+		timeout=current_app.config.get('ASSET_PROXY_TIMEOUT', 10),
+		allow_redirects=False,
+		stream=True,
+	)
+
+
+def _finalize_proxy_response(upstream_response, target_url):
+	try:
+		return _copy_proxy_response(upstream_response)
+	except AssetProxyResponseTooLarge:
+		current_app.logger.warning(
+			'Asset proxy response too large: method=%s target=%s status=%s content_length=%s',
+			request.method,
+			target_url,
+			upstream_response.status_code,
+			upstream_response.headers.get('Content-Length'),
+		)
+		return jsonify({'data': None, 'error': 'Asset proxy upstream response too large'}), 413
 
 
 def _build_asset_proxy_target(proxy_path: str) -> str | None:
@@ -263,26 +330,14 @@ def proxy_same_origin_asset(proxy_path):
 			if not target_url:
 				return jsonify({'data': None, 'error': 'Missing access token for avatar proxy'}), 401
 			try:
-				upstream_response = requests.request(
-					request.method,
-					target_url,
-					headers=headers,
-					timeout=current_app.config.get('ASSET_PROXY_TIMEOUT', 10),
-					allow_redirects=False,
-				)
+				upstream_response = _request_asset_proxy_upstream(target_url, headers)
 			except requests.RequestException:
 				return jsonify({'data': None, 'error': 'Asset proxy upstream request failed'}), 502
-			return _copy_proxy_response(upstream_response)
+			return _finalize_proxy_response(upstream_response, target_url)
 		headers['Authorization'] = f'Bearer {access_token}'
 
 	try:
-		upstream_response = requests.request(
-			request.method,
-			target_url,
-			headers=headers,
-			timeout=current_app.config.get('ASSET_PROXY_TIMEOUT', 10),
-			allow_redirects=False,
-		)
+		upstream_response = _request_asset_proxy_upstream(target_url, headers)
 	except requests.RequestException:
 		return jsonify({'data': None, 'error': 'Asset proxy upstream request failed'}), 502
 
@@ -291,17 +346,13 @@ def proxy_same_origin_asset(proxy_path):
 		# public default-avatar behavior instead of surfacing a 404 to the browser.
 		fallback_url = _build_asset_proxy_target('public/default-avatar')
 		if fallback_url:
+			upstream_response.close()
+			target_url = fallback_url
 			try:
-				upstream_response = requests.request(
-					request.method,
-					fallback_url,
-					headers={'Accept': headers['Accept']},
-					timeout=current_app.config.get('ASSET_PROXY_TIMEOUT', 10),
-					allow_redirects=False,
-				)
+				upstream_response = _request_asset_proxy_upstream(target_url, {'Accept': headers['Accept']})
 			except requests.RequestException:
 				return jsonify({'data': None, 'error': 'Asset proxy upstream request failed'}), 502
 
-	return _copy_proxy_response(upstream_response)
+	return _finalize_proxy_response(upstream_response, target_url)
 
 

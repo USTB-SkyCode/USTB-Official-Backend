@@ -11,6 +11,7 @@ from functools import wraps
 from flask import session, redirect, url_for, jsonify, current_app, request
 
 from app.models.session import UserSession, parse_session_timestamp
+from app.utils.env import get_env_bool, get_env_int, get_env_str
 
 logger = logging.getLogger(__name__)
 
@@ -27,25 +28,6 @@ PUBLIC_API_ENDPOINTS = {
     'api.authorize_file_download',
     'api.authorize_mca_download',
 }
-
-
-def _env_bool(name, default):
-    value = os.environ.get(name)
-    if value is None or value == '':
-        return default
-    return value.lower() == 'true'
-
-
-def _env_int(name, default):
-    value = os.environ.get(name)
-    if value is None or value == '':
-        return default
-    try:
-        return int(value)
-    except ValueError:
-        return default
-
-
 def _extract_access_token(token_data):
     return token_data.get('access_token') or token_data.get('token')
 
@@ -465,21 +447,21 @@ def verify_api_session():
 
 def load_oauth_providers_from_env():
     """Build OAuth provider definitions entirely from environment variables."""
-    github_token_url = os.environ.get('GITHUB_TOKEN_URL', 'https://github.com/login/oauth/access_token')
-    mua_token_url = os.environ.get('MUA_TOKEN_URL', 'https://skin.mualliance.ltd/api/union/oauth2/token')
-    ustb_token_url = os.environ.get('USTB_TOKEN_URL', 'https://skin.ustb.world/skinapi/oauth/token')
+    github_token_url = get_env_str('GITHUB_TOKEN_URL', 'https://github.com/login/oauth/access_token')
+    mua_token_url = get_env_str('MUA_TOKEN_URL', 'https://skin.mualliance.ltd/api/union/oauth2/token')
+    ustb_token_url = get_env_str('USTB_TOKEN_URL', 'https://skin.ustb.world/skinapi/oauth/token')
 
     return {
         'github': {
             'name': 'GitHub',
-            'client_id': os.environ.get('GITHUB_CLIENT_ID', ''),
-            'client_secret': os.environ.get('GITHUB_CLIENT_SECRET', ''),
-            'authorize_url': os.environ.get('GITHUB_AUTHORIZE_URL', 'https://github.com/login/oauth/authorize'),
+            'client_id': get_env_str('GITHUB_CLIENT_ID', ''),
+            'client_secret': get_env_str('GITHUB_CLIENT_SECRET', ''),
+            'authorize_url': get_env_str('GITHUB_AUTHORIZE_URL', 'https://github.com/login/oauth/authorize'),
             'token_url': github_token_url,
-            'user_url': os.environ.get('GITHUB_USER_URL', 'https://api.github.com/user'),
-            'scope': os.environ.get('GITHUB_SCOPE', 'user:email'),
-            'redirect_uri': os.environ.get('GITHUB_REDIRECT_URI', ''),
-            'supports_pkce': _env_bool('GITHUB_SUPPORTS_PKCE', True),
+            'user_url': get_env_str('GITHUB_USER_URL', 'https://api.github.com/user'),
+            'scope': get_env_str('GITHUB_SCOPE', 'user:email'),
+            'redirect_uri': get_env_str('GITHUB_REDIRECT_URI', ''),
+            'supports_pkce': get_env_bool('GITHUB_SUPPORTS_PKCE', True),
             'user_field_mapping': {
                 'id': 'id',
                 'username': 'login',
@@ -488,22 +470,22 @@ def load_oauth_providers_from_env():
                 'avatar_url': 'avatar_url',
             },
             'refresh': False,
-            'refresh_time': _env_int('GITHUB_REFRESH_TIME', 20),
+            'refresh_time': get_env_int('GITHUB_REFRESH_TIME', 20),
             'validation': {
                 'required_fields': ['id', 'login'],
-                'token_endpoint_validation': os.environ.get('GITHUB_TOKEN_ENDPOINT_VALIDATION', github_token_url),
+                'token_endpoint_validation': get_env_str('GITHUB_TOKEN_ENDPOINT_VALIDATION', github_token_url),
             },
         },
         'mua': {
             'name': 'MUA Union',
-            'client_id': os.environ.get('MUA_CLIENT_ID', ''),
-            'client_secret': os.environ.get('MUA_CLIENT_SECRET', ''),
-            'authorize_url': os.environ.get('MUA_AUTHORIZE_URL', 'https://skin.mualliance.ltd/api/union/oauth2/authorize'),
+            'client_id': get_env_str('MUA_CLIENT_ID', ''),
+            'client_secret': get_env_str('MUA_CLIENT_SECRET', ''),
+            'authorize_url': get_env_str('MUA_AUTHORIZE_URL', 'https://skin.mualliance.ltd/api/union/oauth2/authorize'),
             'token_url': mua_token_url,
-            'user_url': os.environ.get('MUA_USER_URL', 'https://skin.mualliance.ltd/api/union/oauth2/user'),
-            'scope': os.environ.get('MUA_SCOPE', 'user'),
-            'redirect_uri': os.environ.get('MUA_REDIRECT_URI', ''),
-            'supports_pkce': _env_bool('MUA_SUPPORTS_PKCE', True),
+            'user_url': get_env_str('MUA_USER_URL', 'https://skin.mualliance.ltd/api/union/oauth2/user'),
+            'scope': get_env_str('MUA_SCOPE', 'user'),
+            'redirect_uri': get_env_str('MUA_REDIRECT_URI', ''),
+            'supports_pkce': get_env_bool('MUA_SUPPORTS_PKCE', True),
             'user_field_mapping': {
                 'id': 'sub',
                 'username': 'nickname',
@@ -512,23 +494,23 @@ def load_oauth_providers_from_env():
                 'avatar_url': None,
             },
             'refresh': False,
-            'refresh_time': _env_int('MUA_REFRESH_TIME', 7200),
+            'refresh_time': get_env_int('MUA_REFRESH_TIME', 7200),
             'validation': {
                 'required_fields': ['sub', 'nickname'],
-                'token_endpoint_validation': os.environ.get('MUA_TOKEN_ENDPOINT_VALIDATION', mua_token_url),
+                'token_endpoint_validation': get_env_str('MUA_TOKEN_ENDPOINT_VALIDATION', mua_token_url),
             },
         },
         'ustb': {
             'name': 'USTB',
-            'client_id': os.environ.get('USTB_CLIENT_ID', ''),
-            'client_secret': os.environ.get('USTB_CLIENT_SECRET', ''),
-            'authorize_url': os.environ.get('USTB_AUTHORIZE_URL', 'https://skin.ustb.world/oauth/authorize'),
+            'client_id': get_env_str('USTB_CLIENT_ID', ''),
+            'client_secret': get_env_str('USTB_CLIENT_SECRET', ''),
+            'authorize_url': get_env_str('USTB_AUTHORIZE_URL', 'https://skin.ustb.world/oauth/authorize'),
             'token_url': ustb_token_url,
-            'user_url': os.environ.get('USTB_USER_URL', 'https://skin.ustb.world/skinapi/oauth/userinfo'),
-            'skin_url': os.environ.get('USTB_SKIN_URL', 'https://skin.ustb.world/skinapi/oauth/skin'),
-            'scope': _merge_scope_value(os.environ.get('USTB_SCOPE', 'userinfo avatar email permission'), 'skin'),
-            'redirect_uri': os.environ.get('USTB_REDIRECT_URI', ''),
-            'supports_pkce': _env_bool('USTB_SUPPORTS_PKCE', False),
+            'user_url': get_env_str('USTB_USER_URL', 'https://skin.ustb.world/skinapi/oauth/userinfo'),
+            'skin_url': get_env_str('USTB_SKIN_URL', 'https://skin.ustb.world/skinapi/oauth/skin'),
+            'scope': _merge_scope_value(get_env_str('USTB_SCOPE', 'userinfo avatar email permission'), 'skin'),
+            'redirect_uri': get_env_str('USTB_REDIRECT_URI', ''),
+            'supports_pkce': get_env_bool('USTB_SUPPORTS_PKCE', False),
             'user_field_mapping': {
                 'id': 'sub',
                 'username': 'username',
@@ -536,13 +518,13 @@ def load_oauth_providers_from_env():
                 'nickname': 'username',
                 'avatar_url': 'avatar_url',
             },
-            'refresh': _env_bool('USTB_REFRESH_ENABLED', True),
-            'refresh_mode': os.environ.get('USTB_REFRESH_MODE', 'oauth2_token'),
-            'refresh_time': _env_int('USTB_REFRESH_TIME', 20),
+            'refresh': get_env_bool('USTB_REFRESH_ENABLED', True),
+            'refresh_mode': get_env_str('USTB_REFRESH_MODE', 'oauth2_token'),
+            'refresh_time': get_env_int('USTB_REFRESH_TIME', 20),
             'validation': {
                 'required_fields': ['sub', 'username'],
-                'token_endpoint_validation': os.environ.get('USTB_TOKEN_ENDPOINT_VALIDATION', ustb_token_url),
+                'token_endpoint_validation': get_env_str('USTB_TOKEN_ENDPOINT_VALIDATION', ustb_token_url),
             },
-            'base_url': os.environ.get('USTB_BASE_URL', 'https://skin.ustb.world'),
+            'base_url': get_env_str('USTB_BASE_URL', 'https://skin.ustb.world'),
         },
     }

@@ -62,7 +62,7 @@ http://{$APP_SITE_HOST} {
 			route {
 				uri strip_prefix {$MCA_BASE_URL}
 				root * /data/mca
-				header Cache-Control "public, max-age=604800"
+				header Cache-Control "no-cache, must-revalidate, max-age=0"
 				file_server
 			}
 		}

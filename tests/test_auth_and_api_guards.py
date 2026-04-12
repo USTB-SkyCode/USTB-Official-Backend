@@ -1,4 +1,6 @@
 from datetime import datetime
+import importlib
+import json
 
 from psycopg2.extras import Json
 
@@ -13,6 +15,20 @@ from app.services.McaDownload import McaDownloadAuthorizationError, McaDownloadA
 from app.services.ServerDataService import MCLocalStorage, normalize_status_payload
 from app.utils.auth import load_oauth_providers_from_env
 from app.utils.serverStatus import query_server_status
+
+
+class _FakeRedisSessionStore:
+	def __init__(self):
+		self._values = {}
+
+	def get(self, name, *args, **kwargs):
+		return self._values.get(name)
+
+	def setex(self, name=None, time=None, value=None, *args, **kwargs):
+		self._values[name] = value
+
+	def delete(self, name, *args, **kwargs):
+		self._values.pop(name, None)
 
 
 def _issue_csrf(client):
@@ -40,6 +56,7 @@ def _client_with_app():
 		DEV_AUTH_REQUIRE_DEBUG=True,
 		DEV_AUTH_SHARED_SECRET='test-secret',
 	)
+	app.session_interface.redis = _FakeRedisSessionStore()
 	return app, app.test_client()
 
 
@@ -112,8 +129,9 @@ def test_cross_origin_isolation_diagnostics_page_is_public():
 		assert b'SharedArrayBuffer' in response.data
 
 
-def test_runtime_config_js_uses_startup_snapshot():
+def test_runtime_config_js_uses_startup_snapshot(monkeypatch):
 	app, client = _client_with_app()
+	monkeypatch.setattr(main_routes, 'load_scene_camera_preset_override_map', lambda: {})
 	app.config.update(
 		RUNTIME_CONFIG_API_BASE_URL='https://api.example.test/',
 		RUNTIME_CONFIG_AUTH_BASE_URL='',
@@ -131,16 +149,20 @@ def test_runtime_config_js_uses_startup_snapshot():
 	assert 'application/javascript' in response.content_type
 	assert response.headers['Cache-Control'] == 'no-store, no-cache, must-revalidate, max-age=0'
 	assert response.headers['Pragma'] == 'no-cache'
-	assert response.get_data(as_text=True) == (
-		'window.APP_CONFIG = '
-		'{"API_BASE_URL": "https://api.example.test", '
-		'"AUTH_BASE_URL": "https://api.example.test", '
-		'"APP_BASE_URL": "https://app.example.test", '
-		'"SKIN_API_BASE_URL": "https://skin.example.test/skinapi", '
-		'"MCA_BASE_URL": "/resource/mca/world", '
-		'"SKIN_BASE_URL": "/assets/skin", '
-		'"DEV_BACKEND_PROXY_ENABLED": true};\n'
-	)
+	body = response.get_data(as_text=True)
+	assert body.startswith('window.APP_CONFIG = ')
+	assert body.endswith(';\n')
+	payload = json.loads(body.removeprefix('window.APP_CONFIG = ').removesuffix(';\n'))
+	assert payload == {
+		'API_BASE_URL': 'https://api.example.test',
+		'AUTH_BASE_URL': 'https://api.example.test',
+		'APP_BASE_URL': 'https://app.example.test',
+		'SKIN_API_BASE_URL': 'https://skin.example.test/skinapi',
+		'MCA_BASE_URL': '/resource/mca/world',
+		'SKIN_BASE_URL': '/assets/skin',
+		'DEV_BACKEND_PROXY_ENABLED': True,
+		'SCENE_CAMERA_PRESET_OVERRIDES': {},
+	}
 
 
 def test_user_skin_requires_login():
@@ -291,15 +313,21 @@ def test_same_origin_asset_proxy_streams_allowed_external_host(monkeypatch):
 
 	class DummyResponse:
 		status_code = 200
-		content = b'png-bytes'
 		headers = {
 			'Content-Type': 'image/png',
 			'Cache-Control': 'public, max-age=60',
 		}
 
-	def fake_request(method, url, headers=None, timeout=None, allow_redirects=None):
+		def iter_content(self, chunk_size=0):
+			yield b'png-bytes'
+
+		def close(self):
+			pass
+
+	def fake_request(method, url, headers=None, timeout=None, allow_redirects=None, stream=None):
 		assert method == 'GET'
 		assert url == 'https://avatars.githubusercontent.com/u/1'
+		assert stream is True
 		return DummyResponse()
 
 	monkeypatch.setattr(main_routes.requests, 'request', fake_request)
@@ -310,6 +338,36 @@ def test_same_origin_asset_proxy_streams_allowed_external_host(monkeypatch):
 		assert response.status_code == 200
 		assert response.data == b'png-bytes'
 		assert response.headers['Content-Type'] == 'image/png'
+
+
+def test_same_origin_asset_proxy_rejects_oversized_response(monkeypatch):
+	app, client = _client_with_app()
+	app.config['ASSET_PROXY_MAX_BYTES'] = 1024
+
+	class DummyResponse:
+		status_code = 200
+		headers = {
+			'Content-Type': 'image/png',
+			'Content-Length': '2048',
+		}
+
+		def iter_content(self, chunk_size=0):
+			yield b'x' * 2048
+
+		def close(self):
+			pass
+
+	def fake_request(method, url, headers=None, timeout=None, allow_redirects=None, stream=None):
+		assert stream is True
+		return DummyResponse()
+
+	monkeypatch.setattr(main_routes.requests, 'request', fake_request)
+
+	with app.app_context():
+		_login_session(client, permission=0)
+		response = client.get('/skin-origin-proxy/external?url=https%3A%2F%2Favatars.githubusercontent.com%2Fu%2F1')
+		assert response.status_code == 413
+		assert response.get_json() == {'data': None, 'error': 'Asset proxy upstream response too large'}
 
 
 def test_mc_server_write_requires_admin_permission():
@@ -413,7 +471,6 @@ def test_mc_storage_assigns_next_id_when_missing(monkeypatch):
 	class FakeCursor:
 		def __init__(self):
 			self.fetchone_results = [
-				{'next_id': 3},
 				{'id': 3, 'ip': 'mc.example.com', 'name': 'Example', 'expose_ip': True},
 			]
 			self.executed = []
@@ -462,8 +519,172 @@ def test_mc_storage_assigns_next_id_when_missing(monkeypatch):
 	row = storage.insert_mc_server(ip='mc.example.com', name='Example', expose_ip=True)
 
 	assert row == {'id': 3, 'ip': 'mc.example.com', 'name': 'Example', 'expose_ip': True}
-	assert any('LOCK TABLE servers IN EXCLUSIVE MODE' in sql for sql, _ in fake_conn.cursor_instance.executed)
-	assert any(params == (3, 'mc.example.com', 'Example', True) for _, params in fake_conn.cursor_instance.executed)
+	assert any("CREATE SEQUENCE IF NOT EXISTS servers_id_seq" in sql for sql, _ in fake_conn.cursor_instance.executed)
+	assert any("ALTER SEQUENCE servers_id_seq MINVALUE 0 RESTART WITH 0" in sql for sql, _ in fake_conn.cursor_instance.executed)
+	assert any("MAX(id) IS NOT NULL" in sql for sql, _ in fake_conn.cursor_instance.executed)
+	assert any("nextval('servers_id_seq')" in sql for sql, _ in fake_conn.cursor_instance.executed)
+	assert any(params == ('mc.example.com', 'Example', True) for _, params in fake_conn.cursor_instance.executed)
+
+
+def test_mc_storage_sequence_init_supports_empty_table(monkeypatch):
+	class FakeCursor:
+		def __init__(self):
+			self.executed = []
+			self.last_sql = ''
+
+		def execute(self, sql, params=None):
+			self.last_sql = sql
+			self.executed.append((sql, params))
+
+		def fetchall(self):
+			if 'FROM information_schema.columns' in self.last_sql:
+				return [{'column_name': 'status', 'data_type': 'jsonb'}]
+			return []
+
+		def fetchone(self):
+			return None
+
+		def __enter__(self):
+			return self
+
+		def __exit__(self, exc_type, exc, tb):
+			return False
+
+	class FakeConn:
+		def __init__(self):
+			self.cursor_instance = FakeCursor()
+			self.commit_count = 0
+
+		def cursor(self):
+			return self.cursor_instance
+
+		def commit(self):
+			self.commit_count += 1
+
+		def rollback(self):
+			pass
+
+	fake_conn = FakeConn()
+
+	def fake_local_storage_init(self, host=None, user=None, password=None, db=None, port=None):
+		self.conn = fake_conn
+
+	monkeypatch.setattr('app.services.LocalStorage.LocalStorage.__init__', fake_local_storage_init)
+
+	MCLocalStorage()
+
+	assert any("CREATE SEQUENCE IF NOT EXISTS servers_id_seq AS INTEGER MINVALUE 0 START WITH 0" in sql for sql, _ in fake_conn.cursor_instance.executed)
+	assert any("ALTER SEQUENCE servers_id_seq MINVALUE 0 RESTART WITH 0" in sql for sql, _ in fake_conn.cursor_instance.executed)
+	assert any("setval('servers_id_seq', COALESCE(MAX(id), 0), MAX(id) IS NOT NULL)" in sql for sql, _ in fake_conn.cursor_instance.executed)
+
+
+def test_config_empty_env_values_fall_back_to_defaults(monkeypatch):
+	for key in (
+		'APP_TIMEZONE',
+		'FILE_DOWNLOAD_TOKEN_SALT',
+		'FILE_DOWNLOAD_BASE_PATH',
+		'SECURE_COOKIES',
+		'SESSION_LIFETIME',
+		'REDIS_URL',
+		'FLASK_DEBUG',
+		'FLASK_HOST',
+		'FLASK_PORT',
+		'RSS_REFRESH_ENABLED',
+		'OAUTH_ALLOW_HTTP_LOCALHOST',
+		'APP_ALLOW_HTTP_LOCALHOST',
+		'DEFAULT_LOGIN_SUCCESS_URL',
+		'DEV_AUTH_REQUIRE_DEBUG',
+		'PGSQL_HOST',
+		'PGSQL_PORT',
+		'PGSQL_DB',
+		'PGSQL_USER',
+		'ASSET_PROXY_TIMEOUT',
+		'ASSET_PROXY_MAX_BYTES',
+		'PGSQL_POOL_MIN_CONN',
+		'PGSQL_POOL_MAX_CONN',
+	):
+		monkeypatch.setenv(key, '')
+
+	import app.config as config_module
+	config_module = importlib.reload(config_module)
+
+	assert config_module.Config.APP_TIMEZONE == 'Asia/Shanghai'
+	assert config_module.Config.FILE_DOWNLOAD_TOKEN_SALT == 'file-download-token'
+	assert config_module.Config.FILE_DOWNLOAD_BASE_PATH == '/downloads'
+	assert config_module.Config.SESSION_COOKIE_SECURE is True
+	assert config_module.Config.PERMANENT_SESSION_LIFETIME == 3600
+	assert config_module.Config.SESSION_REDIS == 'redis://localhost:6379/0'
+	assert config_module.Config.DEBUG is False
+	assert config_module.Config.HOST == '127.0.0.1'
+	assert config_module.Config.PORT == 5000
+	assert config_module.Config.RSS_REFRESH_ENABLED is True
+	assert config_module.Config.OAUTH_ALLOW_HTTP_LOCALHOST is True
+	assert config_module.Config.APP_ALLOW_HTTP_LOCALHOST is True
+	assert config_module.Config.DEFAULT_LOGIN_SUCCESS_URL == '/home'
+	assert config_module.Config.DEV_AUTH_REQUIRE_DEBUG is True
+	assert config_module.Config.PGSQL_HOST == 'localhost'
+	assert config_module.Config.PGSQL_PORT == 5432
+	assert config_module.Config.PGSQL_DB == 'ustbhome'
+	assert config_module.Config.PGSQL_USER == 'postgres'
+	assert config_module.Config.ASSET_PROXY_TIMEOUT == 10
+	assert config_module.Config.ASSET_PROXY_MAX_BYTES == 8 * 1024 * 1024
+	assert config_module.Config.PGSQL_POOL_MIN_CONN == 1
+	assert config_module.Config.PGSQL_POOL_MAX_CONN == 8
+
+
+def test_load_oauth_providers_from_env_ignores_blank_default_overrides(monkeypatch):
+	for key in (
+		'GITHUB_TOKEN_URL',
+		'GITHUB_AUTHORIZE_URL',
+		'GITHUB_USER_URL',
+		'GITHUB_SCOPE',
+		'GITHUB_TOKEN_ENDPOINT_VALIDATION',
+		'GITHUB_SUPPORTS_PKCE',
+		'GITHUB_REFRESH_TIME',
+		'MUA_TOKEN_URL',
+		'MUA_AUTHORIZE_URL',
+		'MUA_USER_URL',
+		'MUA_SCOPE',
+		'MUA_TOKEN_ENDPOINT_VALIDATION',
+		'MUA_SUPPORTS_PKCE',
+		'MUA_REFRESH_TIME',
+		'USTB_TOKEN_URL',
+		'USTB_AUTHORIZE_URL',
+		'USTB_USER_URL',
+		'USTB_SKIN_URL',
+		'USTB_SCOPE',
+		'USTB_SUPPORTS_PKCE',
+		'USTB_REFRESH_ENABLED',
+		'USTB_REFRESH_MODE',
+		'USTB_REFRESH_TIME',
+		'USTB_TOKEN_ENDPOINT_VALIDATION',
+		'USTB_BASE_URL',
+	):
+		monkeypatch.setenv(key, '')
+
+	providers = load_oauth_providers_from_env()
+
+	assert providers['github']['token_url'] == 'https://github.com/login/oauth/access_token'
+	assert providers['github']['authorize_url'] == 'https://github.com/login/oauth/authorize'
+	assert providers['github']['user_url'] == 'https://api.github.com/user'
+	assert providers['github']['scope'] == 'user:email'
+	assert providers['github']['supports_pkce'] is True
+	assert providers['github']['refresh_time'] == 20
+	assert providers['github']['validation']['token_endpoint_validation'] == providers['github']['token_url']
+	assert providers['mua']['token_url'] == 'https://skin.mualliance.ltd/api/union/oauth2/token'
+	assert providers['mua']['scope'] == 'user'
+	assert providers['mua']['supports_pkce'] is True
+	assert providers['ustb']['token_url'] == 'https://skin.ustb.world/skinapi/oauth/token'
+	assert providers['ustb']['authorize_url'] == 'https://skin.ustb.world/oauth/authorize'
+	assert providers['ustb']['user_url'] == 'https://skin.ustb.world/skinapi/oauth/userinfo'
+	assert providers['ustb']['skin_url'] == 'https://skin.ustb.world/skinapi/oauth/skin'
+	assert providers['ustb']['scope'] == 'userinfo avatar email permission skin'
+	assert providers['ustb']['supports_pkce'] is False
+	assert providers['ustb']['refresh'] is True
+	assert providers['ustb']['refresh_mode'] == 'oauth2_token'
+	assert providers['ustb']['refresh_time'] == 20
+	assert providers['ustb']['validation']['token_endpoint_validation'] == providers['ustb']['token_url']
+	assert providers['ustb']['base_url'] == 'https://skin.ustb.world'
 
 
 def test_mc_server_update_uses_patch_and_returns_404_when_missing(monkeypatch):

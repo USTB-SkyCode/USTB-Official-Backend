@@ -74,6 +74,14 @@ class MCLocalStorage(LocalStorage):
                 cursor.execute(
                     "ALTER TABLE servers ADD COLUMN IF NOT EXISTS expose_ip BOOLEAN NOT NULL DEFAULT FALSE;"
                 )
+                cursor.execute(
+                    """
+                    CREATE SEQUENCE IF NOT EXISTS servers_id_seq AS INTEGER MINVALUE 0 START WITH 0;
+                    ALTER SEQUENCE servers_id_seq MINVALUE 0 RESTART WITH 0;
+                    SELECT setval('servers_id_seq', COALESCE(MAX(id), 0), MAX(id) IS NOT NULL)
+                    FROM servers;
+                    """
+                )
             self.conn.commit()
         except psycopg2.Error as exc:
             self._safe_rollback()
@@ -135,20 +143,6 @@ class MCLocalStorage(LocalStorage):
         """
         try:
             with self.conn.cursor() as cursor:
-                cursor.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS servers (
-                        id INTEGER PRIMARY KEY,
-                        ip TEXT NOT NULL,
-                        name TEXT,
-                        expose_ip BOOLEAN NOT NULL DEFAULT FALSE
-                    );
-                    """
-                )
-                cursor.execute(
-                    "ALTER TABLE servers ADD COLUMN IF NOT EXISTS expose_ip BOOLEAN NOT NULL DEFAULT FALSE;"
-                )
-                self.conn.commit()
                 cursor.execute("SELECT id, ip, name, expose_ip FROM servers ORDER BY id")
                 return cursor.fetchall()
         except psycopg2.Error as exc:
@@ -230,15 +224,9 @@ class MCLocalStorage(LocalStorage):
         try:
             with self.conn.cursor() as cursor:
                 if id is None:
-                    cursor.execute("LOCK TABLE servers IN EXCLUSIVE MODE;")
                     cursor.execute(
-                        "SELECT COALESCE(MAX(id), -1) + 1 AS next_id FROM servers;"
-                    )
-                    next_id_row = cursor.fetchone()
-                    next_id = next_id_row['next_id'] if next_id_row else 0
-                    cursor.execute(
-                        "INSERT INTO servers (id, ip, name, expose_ip) VALUES (%s, %s, %s, %s) RETURNING id, ip, name, expose_ip;",
-                        (next_id, ip, name, bool(expose_ip) if expose_ip is not None else False),
+                        "INSERT INTO servers (id, ip, name, expose_ip) VALUES (nextval('servers_id_seq'), %s, %s, %s) RETURNING id, ip, name, expose_ip;",
+                        (ip, name, bool(expose_ip) if expose_ip is not None else False),
                     )
                     self.conn.commit()
                     return cursor.fetchone()
