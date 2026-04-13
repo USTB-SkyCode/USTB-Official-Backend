@@ -1670,6 +1670,88 @@ def test_mc_status_refresh_skips_when_advisory_lock_is_held(monkeypatch):
 	assert job_events[0] == ('running', 'mc_status_refresh', 60)
 	assert job_events[1][0] == 'success'
 	assert job_events[1][1] == 'mc_status_refresh'
+	assert job_events[2] == ('close', None, None)
+
+
+def test_mc_status_refresh_closes_job_status_service_on_success(monkeypatch):
+	class DummyCursor:
+		def __init__(self):
+			self.last_sql = ''
+
+		def execute(self, sql, params=None):
+			self.last_sql = sql
+
+		def fetchall(self):
+			if 'FROM information_schema.columns' in self.last_sql:
+				return [{'column_name': 'status', 'data_type': 'jsonb'}]
+			if 'SELECT ip, status, name FROM server_status' in self.last_sql:
+				return []
+			return []
+
+		def fetchone(self):
+			return None
+
+		def __enter__(self):
+			return self
+
+		def __exit__(self, exc_type, exc, tb):
+			return False
+
+	class DummyStorage:
+		def __init__(self):
+			self.conn = self
+			self.closed = False
+			self.unlocked = []
+
+		def try_advisory_lock(self, key):
+			assert key == 91002
+			return True
+
+		def advisory_unlock(self, key):
+			self.unlocked.append(key)
+
+		def query_mc_server(self):
+			return []
+
+		def _ensure_server_status_schema(self, cursor):
+			return None
+
+		def cursor(self):
+			return DummyCursor()
+
+		def commit(self):
+			return None
+
+		def close(self):
+			self.closed = True
+
+	storage = DummyStorage()
+	monkeypatch.setattr('app.services.ServerDataService.MCLocalStorage', lambda: storage)
+
+	from app.services.ServerDataService import ServerStatusManager
+
+	job_events = []
+
+	class DummyJobStatusService:
+		def mark_running(self, job_name, *, interval_seconds=None):
+			job_events.append(('running', job_name, interval_seconds))
+
+		def mark_success(self, job_name, *, interval_seconds=None, result=None):
+			job_events.append(('success', job_name, result))
+
+		def close(self):
+			job_events.append(('close', None, None))
+
+	monkeypatch.setattr('app.services.ServerDataService.JobStatusService', DummyJobStatusService)
+
+	result = ServerStatusManager(interval=60).update_all_status()
+
+	assert result is None
+	assert storage.unlocked == [91002]
+	assert storage.closed is True
+	assert job_events[0] == ('running', 'mc_status_refresh', 60)
+	assert job_events[1][0] == 'success'
+	assert job_events[2] == ('close', None, None)
 
 
 def test_rss_sync_all_feeds_aggregates_success_and_failure():

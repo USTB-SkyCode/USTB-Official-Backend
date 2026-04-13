@@ -430,10 +430,12 @@ class ServerStatusManager:
         批量更新所有唯一 ip 的状态。
         逻辑：拉取 -> 清理 -> 查询 -> 写入。
         """
-        storage = MCLocalStorage()
-        status_service = JobStatusService()
+        storage = None
+        status_service = None
         lock_acquired = False
         try:
+            storage = MCLocalStorage()
+            status_service = JobStatusService()
             status_service.mark_running(MC_STATUS_JOB_NAME, interval_seconds=self.interval)
             lock_acquired = storage.try_advisory_lock(MC_STATUS_REFRESH_LOCK_KEY)
             if not lock_acquired:
@@ -514,24 +516,32 @@ class ServerStatusManager:
                 },
             )
         except Exception as exc:
-            try:
-                status_service.mark_failure(
-                    MC_STATUS_JOB_NAME,
-                    interval_seconds=self.interval,
-                    error_message=str(exc),
-                )
-            except Exception:
-                logger.exception("failed to persist MC status job failure state")
+            if status_service is not None:
+                try:
+                    status_service.mark_failure(
+                        MC_STATUS_JOB_NAME,
+                        interval_seconds=self.interval,
+                        error_message=str(exc),
+                    )
+                except Exception:
+                    logger.exception("failed to persist MC status job failure state")
             logger.exception("update_all_status 全局异常：%s", exc)
             raise ServerStatusError(str(exc)) from exc
         finally:
-            if lock_acquired:
+            if lock_acquired and storage is not None:
                 try:
                     storage.advisory_unlock(MC_STATUS_REFRESH_LOCK_KEY)
                 except LocalStorageLockError:
                     logger.exception("failed to release MC status advisory lock")
+
+            if status_service is not None:
+                try:
                     status_service.close()
-            storage.close()
+                except Exception:
+                    logger.exception("failed to close MC status job status storage")
+
+            if storage is not None:
+                storage.close()
 
     # -------------------- 查询接口 -------------------- #
 
